@@ -1,0 +1,97 @@
+<!--
+  COMPONENT: EJS MODAL ADD FORM & TOGGLE DEPENDENCY SCRIPT
+  File: views/modal-add-form.ejs
+  Bao gồm đầy đủ các kịch bản kiểm tra:
+  - Tên có tối thiểu 2 từ, chữ cái đầu mỗi từ viết hoa
+  - Image URL hợp lệ
+  - Giá có tối thiểu 6 chữ số
+  - Toggle Switch liên thuộc: Bật Switch A -> Tự động bật Switch B
+-->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form action="/management" method="POST">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add New Item</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- 1. Tên (Ít nhất 2 từ, viết hoa chữ cái đầu) -->
+          <div class="mb-3">
+            <label for="name" class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="name" name="name" placeholder="e.g. Armed Forces Lightning" required>
+            <div class="form-text">Must contain at least two words, and first letter of each word capitalized.</div>
+          </div>
+
+          <!-- 2. Image URL -->
+          <div class="mb-3">
+            <label for="imgWrapper" class="form-label fw-semibold">Image URL <span class="text-danger">*</span></label>
+            <input type="url" class="form-control" id="imgWrapper" name="imgWrapper" placeholder="https://example.com/image.jpg" required>
+          </div>
+
+          <!-- 3. Giá tối thiểu 6 chữ số (>= 100000) -->
+          <div class="mb-3">
+            <label for="price" class="form-label fw-semibold">Price (VND) <span class="text-danger">*</span></label>
+            <input type="number" class="form-control" id="price" name="price" placeholder="100000" min="100000" required>
+            <div class="form-text">Minimum 6 digits (>= 100,000).</div>
+          </div>
+
+          <!-- 4. Select Dropdown từ Collection khác -->
+          <div class="mb-3">
+            <label for="categoryId" class="form-label fw-semibold">Category / Manufacturer <span class="text-danger">*</span></label>
+            <select class="form-select" id="categoryId" name="categoryId" required>
+              <option value="" disabled selected>-- Select an option --</option>
+              <% if (typeof categories !== 'undefined') { %>
+                <% categories.forEach(cat => { %>
+                  <option value="<%= cat._id %>"><%= cat.name || cat.manufacturer %></option>
+                <% }) %>
+              <% } %>
+            </select>
+          </div>
+
+          <!-- 5. Switch / Toggle liên thuộc -->
+          <div class="row g-3 p-3 bg-light rounded border mb-3">
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="toggleAdult" name="adult">
+                <label class="form-check-label fw-semibold" for="toggleAdult">Adult Model</label>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="toggleAssembly" name="isAssembly">
+                <label class="form-check-label fw-semibold" for="toggleAssembly">Requires Assembly</label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary fw-semibold">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // QUY TẮC: "If adult is true, then isAssembly must always be true"
+  const adultSw = document.getElementById('toggleAdult');
+  const assemblySw = document.getElementById('toggleAssembly');
+
+  if (adultSw && assemblySw) {
+    adultSw.addEventListener('change', function() {
+      if (this.checked) {
+        assemblySw.checked = true;
+      }
+    });
+
+    assemblySw.addEventListener('change', function() {
+      if (!this.checked && adultSw.checked) {
+        alert('If Adult is true, then Assembly must always be true!');
+        this.checked = true;
+      }
+    });
+  }
+</script>
+
