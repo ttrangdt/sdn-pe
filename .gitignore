@@ -1,0 +1,76 @@
+# ==========================================
+# GITIGNORE - SDN302 PRACTICE & EXAM WORKSPACE
+# ==========================================
+
+# Dependencies (Tất cả thư mục node_modules ở mọi cấp thư mục)
+node_modules/
+**/node_modules/
+package-lock.json.backup
+
+# Logs & Debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment Configuration Files
+# Lưu ý: Các file chứa config nhạy cảm hoặc cấu hình local được bỏ qua
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env.backup
+# Cho phép push các file mẫu .env.example lên GitHub
+!.env.example
+
+# Operating System Files
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# IDEs & Code Editors
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Temporary & Cache
+.npm/
+.eslintcache
+.cache/
+tmp/
+temp/
+*.tmp
+
+# AI Agent & Scratch Files (if any)
+.gemini/
+.system_generated/
+
