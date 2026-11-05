@@ -1,52 +1,41 @@
 const mongoose = require('mongoose');
 const Class = require('../models/Class');
-const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 
 // ============================================================================
-// Question 1 (1.5 points): Retrieve Students by Class
+// Question 1 (1.5 điểm): Lấy danh sách sinh viên theo lớp học
 // GET /api/classes/:classId/students?status=enrolled
 // ============================================================================
 const getStudentsByClass = async (req, res) => {
-  const { classId } = req.params;
-  const { status } = req.query;
-
-  // 1. Validate classId format
-  if (!mongoose.Types.ObjectId.isValid(classId)) {
-    return res.status(400).json({ error: `Invalid classId: ${classId}` });
-  }
-
   try {
-    // 2. Check if class exists
-    const classObj = await Class.findById(classId);
-    if (!classObj) {
-      return res.status(404).json({ error: `Class with id = ${classId} not found` });
+    const { classId } = req.params;
+    const { status } = req.query;
+
+    // 1. Kiểm tra định dạng ID
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ error: `Invalid classId: ${classId}` });
     }
 
-    // 3. Only accept valid status values: enrolled or dropped
+    // 2. Kiểm tra status query
     if (!status || (status !== 'enrolled' && status !== 'dropped')) {
       return res.status(400).json({ error: `Invalid status: ${status}` });
     }
 
-    // 4. Filter enrollments by status
-    const matchingEnrollments = (classObj.enrollments || []).filter(e => e.status === status);
-    const studentIds = matchingEnrollments.map(e => e.studentId);
+    // 3. Tìm lớp học kèm populate thông tin sinh viên
+    const classObj = await Class.findById(classId).populate('enrollments.studentId');
+    if (!classObj) {
+      return res.status(404).json({ error: `Class with id = ${classId} not found` });
+    }
 
-    // 5. Query student details
-    const students = await Student.find({ _id: { $in: studentIds } });
-    const studentMap = new Map(students.map(s => [s._id.toString(), s]));
-
-    // Format output: id (renamed from _id), studentCode, fullName, email
-    const result = studentIds.map(id => {
-      const s = studentMap.get(id.toString());
-      if (!s) return null;
-      return {
-        id: s._id.toString(),
-        studentCode: s.studentCode,
-        fullName: s.fullName,
-        email: s.email
-      };
-    }).filter(Boolean);
+    // 4. Lọc theo trạng thái và định dạng dữ liệu trả về
+    const result = classObj.enrollments
+      .filter((e) => e.status === status && e.studentId)
+      .map((e) => ({
+        id: e.studentId._id.toString(),
+        studentCode: e.studentId.studentCode,
+        fullName: e.studentId.fullName,
+        email: e.studentId.email,
+      }));
 
     return res.status(200).json(result);
   } catch (error) {
@@ -55,60 +44,56 @@ const getStudentsByClass = async (req, res) => {
 };
 
 // ============================================================================
-// Question 2 (2.5 points): Retrieve Attendance Statistics by Class
+// Question 2 (2.5 điểm): Thống kê điểm danh theo lớp học
 // GET /api/classes/:classId/attendance-summary
 // ============================================================================
 const getAttendanceSummary = async (req, res) => {
-  const { classId } = req.params;
-
-  // 1. Validate classId format
-  if (!mongoose.Types.ObjectId.isValid(classId)) {
-    return res.status(400).json({ error: `Invalid classId: ${classId}` });
-  }
-
   try {
-    // 2. Check if class exists
-    const classObj = await Class.findById(classId);
+    const { classId } = req.params;
+
+    // 1. Kiểm tra định dạng ID
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ error: `Invalid classId: ${classId}` });
+    }
+
+    // 2. Tìm lớp học kèm populate thông tin sinh viên
+    const classObj = await Class.findById(classId).populate('enrollments.studentId');
     if (!classObj) {
       return res.status(404).json({ error: `Class with id = ${classId} not found` });
     }
 
-    // 3. For each student enrolled in the class
-    const enrolledEnrollments = (classObj.enrollments || []).filter(e => e.status === 'enrolled');
-    const studentIds = enrolledEnrollments.map(e => e.studentId);
+    // 3. Lấy toàn bộ điểm danh của lớp
+    const attendances = await Attendance.find({ classId });
 
-    const students = await Student.find({ _id: { $in: studentIds } });
-    const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+    // 4. Lọc danh sách sinh viên đang theo học (enrolled)
+    const enrolledStudents = classObj.enrollments.filter(
+      (e) => e.status === 'enrolled' && e.studentId
+    );
 
-    // Fetch all attendance records for this class
-    const allClassAttendances = await Attendance.find({ classId: classObj._id });
-
-    const summary = studentIds.map(sId => {
-      const s = studentMap.get(sId.toString());
-      if (!s) return null;
-
-      const studentAttendances = allClassAttendances.filter(
-        a => a.studentId.toString() === s._id.toString()
+    // 5. Tính toán thống kê cho từng sinh viên
+    const summary = enrolledStudents.map((e) => {
+      const student = e.studentId;
+      const records = attendances.filter(
+        (a) => a.studentId.toString() === student._id.toString()
       );
 
-      const totalSessions = studentAttendances.length;
-      const present = studentAttendances.filter(a => a.status === 'PRESENT').length;
-      const absent = studentAttendances.filter(a => a.status === 'ABSENT').length;
-      const attendanceRate = totalSessions > 0
+      const totalSessions = records.length;
+      const present = records.filter((a) => a.status === 'PRESENT').length;
+      const absent = records.filter((a) => a.status === 'ABSENT').length;
+      const attendanceRate = totalSessions
         ? Number(((present / totalSessions) * 100).toFixed(1))
         : 0;
-      const warning = attendanceRate < 80;
 
       return {
-        studentCode: s.studentCode,
-        fullName: s.fullName,
+        studentCode: student.studentCode,
+        fullName: student.fullName,
         totalSessions,
         present,
         absent,
         attendanceRate,
-        warning
+        warning: attendanceRate < 80,
       };
-    }).filter(Boolean);
+    });
 
     return res.status(200).json(summary);
   } catch (error) {
@@ -117,91 +102,68 @@ const getAttendanceSummary = async (req, res) => {
 };
 
 // ============================================================================
-// Question 4 (3.5 points): Bulk Attendance Entry with Upsert
+// Question 4 (3.5 điểm): Điểm danh hàng loạt kèm ghi đè (Bulk Upsert)
 // POST /api/classes/:classId/attendances
 // ============================================================================
 const bulkAttendanceUpsert = async (req, res) => {
-  const { classId } = req.params;
-  const { date, records } = req.body;
-
-  // 1. Validate classId format
-  if (!mongoose.Types.ObjectId.isValid(classId)) {
-    return res.status(400).json({ error: `Invalid classId: ${classId}` });
-  }
-
   try {
-    // 2. Check if class exists
-    const classObj = await Class.findById(classId);
+    const { classId } = req.params;
+    const { date, records } = req.body;
+
+    // 1. Kiểm tra định dạng ID
+    if (!mongoose.Types.ObjectId.isValid(classId)) {
+      return res.status(400).json({ error: `Invalid classId: ${classId}` });
+    }
+
+    // 2. Tìm lớp kèm thông tin sinh viên
+    const classObj = await Class.findById(classId).populate('enrollments.studentId');
     if (!classObj) {
       return res.status(404).json({ error: `Class with id = ${classId} not found` });
     }
 
-    // 3. Return 400 if date is missing or is a future date
-    if (!date) {
-      return res.status(400).json({ error: 'Date cannot be in the future' });
-    }
-    const sessionDate = new Date(date);
-    if (isNaN(sessionDate.getTime()) || sessionDate > new Date()) {
+    // 3. Kiểm tra ngày: không được để trống và không được ở tương lai
+    if (!date || new Date(date) > new Date()) {
       return res.status(400).json({ error: 'Date cannot be in the future' });
     }
 
-    // 4. Return 400 if records is missing or empty
-    if (!records || !Array.isArray(records) || records.length === 0) {
+    // 4. Kiểm tra records mảng không được rỗng
+    if (!Array.isArray(records) || records.length === 0) {
       return res.status(400).json({ error: 'Records must be a non-empty array' });
     }
 
-    // 5. Must include ALL students enrolled in the class
-    const enrolledEnrollments = (classObj.enrollments || []).filter(e => e.status === 'enrolled');
-    const enrolledStudentIds = enrolledEnrollments.map(e => e.studentId.toString());
-
-    const enrolledStudents = await Student.find({ _id: { $in: enrolledStudentIds } });
-    const studentInfoMap = new Map(enrolledStudents.map(s => [s._id.toString(), s]));
-
-    const submittedStudentIds = new Set(records.map(r => r.studentId));
-
-    for (const enrolledId of enrolledStudentIds) {
-      if (!submittedStudentIds.has(enrolledId)) {
-        const student = studentInfoMap.get(enrolledId);
-        const code = student ? student.studentCode : enrolledId;
-        const name = student ? student.fullName : '';
+    // 5. Kiểm tra phải nộp đủ cho tất cả sinh viên đang 'enrolled'
+    const enrolledList = classObj.enrollments.filter((e) => e.status === 'enrolled');
+    for (const e of enrolledList) {
+      const hasSubmitted = records.some((r) => r.studentId === e.studentId._id.toString());
+      if (!hasSubmitted) {
         return res.status(400).json({
-          error: `Missing attendance for student ${code} (${name})`
+          error: `Missing attendance for student ${e.studentId.studentCode} (${e.studentId.fullName})`,
         });
       }
     }
 
-    // 6. Each studentId must belong to the class
-    const allClassMemberIds = new Set((classObj.enrollments || []).map(e => e.studentId.toString()));
+    // 6. Kiểm tra từng sinh viên nộp phải thuộc về lớp và status hợp lệ
+    const allMemberIds = classObj.enrollments.map((e) => e.studentId._id.toString());
     for (const r of records) {
-      if (!allClassMemberIds.has(r.studentId)) {
+      if (!allMemberIds.includes(r.studentId)) {
         return res.status(400).json({
-          error: `Student ${r.studentId} does not belong to class`
+          error: `Student ${r.studentId} does not belong to class`,
         });
       }
-    }
-
-    // 7. Only accept status values: PRESENT or ABSENT
-    for (const r of records) {
       if (r.status !== 'PRESENT' && r.status !== 'ABSENT') {
         return res.status(400).json({ error: `Invalid status: ${r.status}` });
       }
     }
 
-    // 8. Upsert logic: overwrite existing for the given date
-    const recordDate = new Date(date);
-    recordDate.setUTCHours(0, 0, 0, 0);
-
-    const startOfDay = new Date(recordDate);
-    const endOfDay = new Date(recordDate);
-    endOfDay.setUTCHours(23, 59, 59, 999);
-
+    // 7. Thực hiện Upsert (nếu đã có thì ghi đè, chưa có thì tạo mới)
+    const sessionDate = new Date(date);
     let updatedCount = 0;
 
     for (const r of records) {
       const existing = await Attendance.findOne({
-        classId: classObj._id,
+        classId,
         studentId: r.studentId,
-        date: { $gte: startOfDay, $lte: endOfDay }
+        date: sessionDate,
       });
 
       if (existing) {
@@ -210,24 +172,21 @@ const bulkAttendanceUpsert = async (req, res) => {
         updatedCount++;
       } else {
         await Attendance.create({
-          classId: classObj._id,
+          classId,
           studentId: r.studentId,
-          date: recordDate,
-          status: r.status
+          date: sessionDate,
+          status: r.status,
         });
       }
     }
 
-    const totalRecords = records.length;
-    const present = records.filter(r => r.status === 'PRESENT').length;
-    const absent = records.filter(r => r.status === 'ABSENT').length;
-
+    // 8. Trả về kết quả tổng kết
     return res.status(201).json({
       message: 'Attendance recorded successfully',
-      totalRecords,
-      present,
-      absent,
-      updatedCount
+      totalRecords: records.length,
+      present: records.filter((r) => r.status === 'PRESENT').length,
+      absent: records.filter((r) => r.status === 'ABSENT').length,
+      updatedCount,
     });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -237,6 +196,5 @@ const bulkAttendanceUpsert = async (req, res) => {
 module.exports = {
   getStudentsByClass,
   getAttendanceSummary,
-  bulkAttendanceUpsert
+  bulkAttendanceUpsert,
 };
-
