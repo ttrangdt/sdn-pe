@@ -1,0 +1,871 @@
+const fs = require('fs');
+const path = require('path');
+
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const isSeedRequested = process.argv.includes('--seed');
+const isSeedOnly = process.argv.includes('--seed-only');
+
+function isProtectedPath(targetPath) {
+  if (!targetPath) return false;
+  const resolved = path.resolve(targetPath).toLowerCase();
+  return resolved.includes('sdn302_given');
+}
+
+function safeWriteFileSync(filePath, content, encoding = 'utf-8') {
+  if (isProtectedPath(filePath)) {
+    console.error(`[CHAN] Bao ve SDN302_given: Khong duoc ghi vao ${filePath}`);
+    return false;
+  }
+  if (path.basename(filePath).toLowerCase() === 'package-lock.json') {
+    console.error(`[CHAN] Bao ve package-lock.json: Khong duoc phep ghi de package-lock.json!`);
+    return false;
+  }
+  fs.writeFileSync(filePath, content, encoding);
+  return true;
+}
+
+function safeMkdirSync(dirPath) {
+  if (isProtectedPath(dirPath)) {
+    console.error(`[CHAN] Bao ve SDN302_given: Khong duoc tao thu muc trong ${dirPath}`);
+    return false;
+  }
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+  return true;
+}
+
+function safeUnlinkSync(filePath) {
+  if (isProtectedPath(filePath)) {
+    console.error(`[CHAN] Bao ve SDN302_given: Khong duoc xoa file trong ${filePath}`);
+    return false;
+  }
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+const possibleInputDirs = [
+  args[0],
+  path.join(process.cwd(), 'material_0'),
+  path.join(process.cwd(), 'data'),
+  path.join(__dirname, 'material_0'),
+  path.join(__dirname, 'data'),
+  path.join(__dirname, '..', 'material_0'),
+  path.join(__dirname, '..', 'data')
+].filter(Boolean);
+
+let inputDir = null;
+for (const dir of possibleInputDirs) {
+  if (isProtectedPath(dir)) continue;
+  if (fs.existsSync(dir) && fs.readdirSync(dir).some(f => f.endsWith('.json'))) {
+    inputDir = dir;
+    break;
+  }
+}
+
+const possibleResourceDirs = [
+  args[1],
+  path.join(process.cwd(), 'resource'),
+  fs.existsSync(path.join(process.cwd(), 'dal')) ? process.cwd() : null,
+  path.join(__dirname, 'resource'),
+  fs.existsSync(path.join(__dirname, 'dal')) ? __dirname : null,
+  path.join(__dirname, '..', 'resource')
+].filter(Boolean);
+
+let resourceDir = null;
+for (const dir of possibleResourceDirs) {
+  if (isProtectedPath(dir)) continue;
+
+  if (fs.existsSync(dir) && (fs.existsSync(path.join(dir, 'package.json')) || fs.existsSync(path.join(dir, 'server.js')))) {
+    resourceDir = dir;
+    break;
+  }
+}
+
+if (!inputDir) {
+  console.error('[ERROR] Khong tim thay thu muc chua file .json (vi du: material_0)!');
+  console.log('[HINT] Hay dat thu muc material_0 cung cap voi khoi-tao.js hoac truyen tham so: node khoi-tao.js <path_to_material_0>');
+  process.exit(1);
+}
+
+if (!resourceDir) {
+  const fallback = path.join(process.cwd(), 'resource');
+  if (!isProtectedPath(fallback)) {
+    resourceDir = fallback;
+    safeMkdirSync(resourceDir);
+  }
+}
+
+if (!resourceDir || isProtectedPath(resourceDir) || isProtectedPath(process.cwd())) {
+  console.error('[ERROR] Phat hien thu muc dich hoac thu muc thuc thi la "SDN302_given"!');
+  console.error('[BAO VE] Thu muc "SDN302_given" la thu muc goc cua de thi, duoc bao ve tuyet doi!');
+  console.error('[BAO VE] Nghiem cam thay the hay chinh sua package.json, package-lock.json hoac bat ky file nao trong SDN302_given!');
+  console.log('[HUONG DAN] Hay tao mot thu muc lam bai rieng (vi du: test1, work,...) roi copy material_0 va resource vao do de lam bai.');
+  process.exit(1);
+}
+
+console.log('=== SDN302 FRAMEWORK INITIALIZER ===');
+console.log(`[INFO] Input JSON:  ${path.resolve(inputDir)}`);
+console.log(`[INFO] Resource:    ${path.resolve(resourceDir)}\n`);
+
+function toModelName(pluralName) {
+  let name = pluralName.replace(/\.json$/i, '').trim();
+  const specialMap = {
+    movies: 'Movie',
+    classes: 'Class',
+    quizzes: 'Quiz',
+    people: 'Person',
+    children: 'Child',
+    criteria: 'Criterion',
+    attendances: 'Attendance',
+    students: 'Student',
+    subjects: 'Subject',
+    rooms: 'Room',
+    showtimes: 'Showtime',
+    tickets: 'Ticket',
+    users: 'User',
+    categories: 'Category',
+    genres: 'Genre',
+    orders: 'Order',
+    products: 'Product',
+    authors: 'Author',
+    books: 'Book',
+    seats: 'Seat'
+  };
+
+  const lower = name.toLowerCase();
+  if (specialMap[lower]) {
+    return specialMap[lower];
+  }
+
+  if (lower.endsWith('ies')) {
+    name = name.slice(0, -3) + 'y';
+  } else if (lower.endsWith('ses') || lower.endsWith('xes') || lower.endsWith('ches') || lower.endsWith('shes')) {
+    name = name.slice(0, -2);
+  } else if (lower.endsWith('s') && !lower.endsWith('ss')) {
+    name = name.slice(0, -1);
+  }
+
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function toCamelCase(str) {
+  const model = toModelName(str);
+  return model.charAt(0).toLowerCase() + model.slice(1);
+}
+
+function inferRefModel(fieldName) {
+  const clean = fieldName.replace(/Id$/i, '');
+  return toModelName(clean);
+}
+
+function isIsoDateString(val) {
+  return typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val) && !isNaN(Date.parse(val));
+}
+
+function isEnumField(fieldName, valuesSet) {
+  if (/name|email|description|address|title|url|img|avatar|phone|comment|content|code|slug|password/i.test(fieldName)) {
+    return false;
+  }
+  if (/status|role|type|gender|category|level|mode|state|payment|priority/i.test(fieldName)) {
+    return true;
+  }
+  const vals = Array.from(valuesSet);
+  if (vals.length >= 2 && vals.length <= 6) {
+    const allAreTokens = vals.every(v => /^[A-Za-z0-9_-]{2,20}$/.test(v));
+    if (allAreTokens) return true;
+  }
+  return false;
+}
+
+function analyzeCollection(data, collectionName) {
+  const fields = {};
+  const totalDocs = data.length;
+
+  for (const doc of data) {
+    for (const [key, val] of Object.entries(doc)) {
+      if (key === '_id') continue;
+
+      if (!fields[key]) {
+        fields[key] = {
+          types: new Set(),
+          values: new Set(),
+          count: 0,
+          sampleArray: null,
+          hasOid: false,
+          hasDate: false
+        };
+      }
+
+      fields[key].count++;
+
+      if (val === null || val === undefined) {
+        fields[key].types.add('null');
+      } else if (Array.isArray(val)) {
+        fields[key].types.add('array');
+        if (!fields[key].sampleArray && val.length > 0) {
+          fields[key].sampleArray = val;
+        }
+      } else if (typeof val === 'object') {
+        if (val.$oid) {
+          fields[key].types.add('ObjectId');
+          fields[key].hasOid = true;
+        } else if (val.$date) {
+          fields[key].types.add('Date');
+          fields[key].hasDate = true;
+        } else {
+          fields[key].types.add('object');
+        }
+      } else if (isIsoDateString(val)) {
+        fields[key].types.add('Date');
+      } else {
+        fields[key].types.add(typeof val);
+        if (typeof val === 'string') {
+          fields[key].values.add(val);
+        }
+      }
+    }
+  }
+
+  return { fields, totalDocs };
+}
+
+function generateModelCode(fields, totalDocs, modelName, collectionName) {
+  const subSchemas = [];
+  const fieldLines = [];
+  const refFields = [];
+
+  for (const [field, info] of Object.entries(fields)) {
+    const isRequired = info.count === totalDocs;
+
+    if (info.hasOid || field.endsWith('Id') || info.types.has('ObjectId')) {
+      const refModel = inferRefModel(field);
+      refFields.push(field);
+      fieldLines.push(`  ${field}: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: '${refModel}'${isRequired ? ',\n    required: true' : ''}
+  }`);
+      continue;
+    }
+
+    if (info.hasDate || info.types.has('Date')) {
+      fieldLines.push(`  ${field}: {
+    type: Date${isRequired ? ',\n    required: true' : ''}
+  }`);
+      continue;
+    }
+
+    if (info.types.has('number')) {
+      fieldLines.push(`  ${field}: {
+    type: Number${isRequired ? ',\n    required: true' : ''}
+  }`);
+      continue;
+    }
+
+    if (info.types.has('boolean')) {
+      fieldLines.push(`  ${field}: {
+    type: Boolean,
+    default: false
+  }`);
+      continue;
+    }
+
+    if (info.types.has('array')) {
+      if (info.sampleArray && typeof info.sampleArray[0] === 'object' && !info.sampleArray[0].$oid) {
+        const subSchemaName = `${field.replace(/s$/, '')}Schema`;
+        const subFields = {};
+
+        for (const item of info.sampleArray) {
+          for (const [subKey, subVal] of Object.entries(item)) {
+            if (!subFields[subKey]) subFields[subKey] = new Set();
+            if (subVal && subVal.$oid) subFields[subKey].add('ObjectId');
+            else subFields[subKey].add(typeof subVal);
+          }
+        }
+
+        const subFieldProps = [];
+        for (const [subKey, subTypes] of Object.entries(subFields)) {
+          if (subKey.endsWith('Id') || subTypes.has('ObjectId')) {
+            const subRefModel = inferRefModel(subKey);
+            refFields.push(`${field}.${subKey}`);
+            subFieldProps.push(`  ${subKey}: { type: mongoose.Schema.Types.ObjectId, ref: '${subRefModel}', required: true }`);
+          } else if (subKey === 'status' || isEnumField(subKey, new Set(info.sampleArray.map(x => x[subKey])))) {
+            const distinctVals = Array.from(new Set(info.sampleArray.map(x => x[subKey]).filter(Boolean)));
+            if (distinctVals.length > 0 && distinctVals.length <= 6) {
+              subFieldProps.push(`  ${subKey}: { type: String, enum: [${distinctVals.map(v => `'${v}'`).join(', ')}], default: '${distinctVals[0]}' }`);
+            } else {
+              subFieldProps.push(`  ${subKey}: { type: String, required: true }`);
+            }
+          } else {
+            subFieldProps.push(`  ${subKey}: { type: String }`);
+          }
+        }
+
+        subSchemas.push(`const ${subSchemaName} = new mongoose.Schema({
+${subFieldProps.join(',\n')}
+}, { _id: false });`);
+
+        fieldLines.push(`  ${field}: [${subSchemaName}]`);
+      } else {
+        fieldLines.push(`  ${field}: [{ type: String }]`);
+      }
+      continue;
+    }
+
+    if (info.types.has('string')) {
+      if (isEnumField(field, info.values)) {
+        const enumValues = Array.from(info.values).map(v => `'${v}'`).join(', ');
+        fieldLines.push(`  ${field}: {
+    type: String,
+    enum: [${enumValues}]${isRequired ? ',\n    required: true' : ''}
+  }`);
+      } else {
+        fieldLines.push(`  ${field}: {
+    type: String${isRequired ? ',\n    required: true' : ''},
+    trim: true
+  }`);
+      }
+      continue;
+    }
+
+    fieldLines.push(`  ${field}: { type: String }`);
+  }
+
+  const subSchemasCode = subSchemas.length > 0 ? subSchemas.join('\n\n') + '\n\n' : '';
+  const schemaVarName = `${modelName.charAt(0).toLowerCase() + modelName.slice(1)}Schema`;
+
+  const code = `const mongoose = require('mongoose');
+
+${subSchemasCode}const ${schemaVarName} = new mongoose.Schema({
+${fieldLines.join(',\n')}
+}, {
+  timestamps: true,
+  versionKey: false
+});
+
+module.exports = mongoose.model('${modelName}', ${schemaVarName}, '${collectionName}');
+`;
+
+  return { code, refFields };
+}
+
+function generateControllerCode(modelName, camelName, collectionName, refFields) {
+  let populateChain = '';
+  if (refFields && refFields.length > 0) {
+    populateChain = refFields.map(f => `\n      .populate('${f}')`).join('');
+  }
+
+  return `const mongoose = require('mongoose');
+const ${modelName} = require('../models/${camelName}.model');
+
+const getAll = async (req, res) => {
+  try {
+    const list = await ${modelName}.find(req.query)${populateChain};
+    return res.status(200).json(list);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+const getById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: \`Invalid ${modelName} ID: \${id}\` });
+    }
+
+    const item = await ${modelName}.findById(id)${populateChain};
+    if (!item) {
+      return res.status(404).json({ error: \`${modelName} with id = \${id} not found\` });
+    }
+
+    return res.status(200).json(item);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+const create = async (req, res) => {
+  try {
+    const newItem = await ${modelName}.create(req.body);
+    return res.status(201).json(newItem);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+const update = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: \`Invalid ${modelName} ID: \${id}\` });
+    }
+
+    const updated = await ${modelName}.findByIdAndUpdate(id, req.body, {
+      new: true,
+      runValidators: true
+    });
+
+    if (!updated) {
+      return res.status(404).json({ error: \`${modelName} with id = \${id} not found\` });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+
+const deleteItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: \`Invalid ${modelName} ID: \${id}\` });
+    }
+
+    const deleted = await ${modelName}.findByIdAndDelete(id);
+    if (!deleted) {
+      return res.status(404).json({ error: \`${modelName} with id = \${id} not found\` });
+    }
+
+    return res.status(200).json({ message: \`${modelName} deleted successfully\` });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+module.exports = {
+  getAll,
+  getById,
+  create,
+  update,
+  deleteItem
+};
+`;
+}
+
+function generateRouteCode(modelName, camelName) {
+  return `const express = require('express');
+const router = express.Router();
+const controller = require('../controllers/${camelName}.controller');
+
+router.get('/', controller.getAll);
+router.get('/:id', controller.getById);
+router.post('/', controller.create);
+router.put('/:id', controller.update);
+router.delete('/:id', controller.deleteItem);
+
+module.exports = router;
+`;
+}
+
+function generateServerCode(modelsMeta) {
+  const routeImports = modelsMeta.map(m => `const ${m.camelName}Route = require('./routes/${m.camelName}.route');`).join('\n');
+  const routeUses = modelsMeta.map(m => `app.use('/api/${m.collectionName}', ${m.camelName}Route);`).join('\n');
+  const logEndpoints = modelsMeta.map(m => `      console.log(' - http://localhost:' + PORT + '/api/${m.collectionName}');`).join('\n');
+
+  return `const express = require('express');
+const morgan = require('morgan');
+const path = require('path');
+
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+const { connectDb } = require('./dal/database');
+
+${routeImports}
+
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('dev'));
+
+try {
+  const cors = require('cors');
+  app.use(cors());
+} catch (e) {}
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'SDN302 Exam API Server is ready',
+    endpoints: [
+${modelsMeta.map(m => `      '/api/${m.collectionName}'`).join(',\n')}
+    ]
+  });
+});
+
+app.get('/api', (req, res) => {
+  res.status(200).json({ message: 'Welcome to SDN302 RESTful API Server' });
+});
+
+${routeUses}
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled Error:', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
+const PORT = process.env.PORT || 9999;
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/databaseName';
+
+(async () => {
+  try {
+    await connectDb(MONGO_URI);
+    app.listen(PORT, () => {
+      console.log('\\n====================================================');
+      console.log(\`  Server running at: http://localhost:\${PORT}\`);
+      console.log('====================================================');
+      console.log('Available API Endpoints:');
+${logEndpoints}
+      console.log('====================================================\\n');
+    });
+  } catch (error) {
+    console.error('[ERROR] Cannot start server:', error.message);
+    process.exit(1);
+  }
+})();
+
+module.exports = app;
+`;
+}
+
+function generateMarkdownRelationships(modelsMeta, relationships) {
+  const toMermaidEntity = name => {
+    const upper = name.toUpperCase();
+    const reserved = ['CLASS', 'ONE', 'MANY', 'TO', 'U', 'STYLE', 'CLICK', 'GRAPH', 'END', 'DEFAULT', 'TITLE'];
+    return reserved.includes(upper) ? `${upper}_ENTITY` : upper;
+  };
+
+  let mermaid = '```mermaid\nerDiagram\n';
+  const entityDefs = [];
+
+  for (const meta of modelsMeta) {
+    const entityName = toMermaidEntity(meta.modelName);
+    const fieldsList = Object.entries(meta.fields).map(([fname, finfo]) => {
+      let t = 'string';
+      if (finfo.hasOid || fname.endsWith('Id') || finfo.types.has('ObjectId')) t = 'ObjectId';
+      else if (finfo.hasDate || finfo.types.has('Date')) t = 'Date';
+      else if (finfo.types.has('number')) t = 'number';
+      else if (finfo.types.has('boolean')) t = 'boolean';
+      else if (finfo.types.has('array')) t = 'array';
+      return `        ${t} ${fname}`;
+    }).slice(0, 8);
+
+    entityDefs.push(`    ${entityName} {\n${fieldsList.join('\n')}\n    }`);
+  }
+
+  mermaid += entityDefs.join('\n\n') + '\n\n';
+
+  for (const rel of relationships) {
+    const from = toMermaidEntity(rel.fromModel);
+    const to = toMermaidEntity(rel.toModel);
+    mermaid += `    ${from} }o--|| ${to} : "${rel.field}"\n`;
+  }
+  mermaid += '```\n';
+
+  let relTable = '| Collection goc | Truong khoa ngoai (Field) | Tham chieu Model | Collection dich | Quan he | Ghi chu |\n';
+  relTable += '| :--- | :--- | :--- | :--- | :--- | :--- |\n';
+  if (relationships.length === 0) {
+    relTable += '| Khong phat hien khoa ngoai truc tiep | - | - | - | - | - |\n';
+  } else {
+    for (const rel of relationships) {
+      relTable += `| **${rel.fromCollection}** | \`${rel.field}\` | **${rel.toModel}** | \`${rel.toCollection}\` | N - 1 | ${rel.isSubdoc ? 'Khoa ngoai trong Sub-document' : 'Khoa ngoai truc tiep'} |\n`;
+    }
+  }
+
+  let collectionsDetail = '';
+  for (const meta of modelsMeta) {
+    collectionsDetail += `\n### Collection: \`${meta.collectionName}\` (Model: \`${meta.modelName}\`)\n`;
+    collectionsDetail += `- **So luong ban ghi mau**: ${meta.totalDocs} documents\n`;
+    collectionsDetail += `- **API Endpoint**: \`http://localhost:9999/api/${meta.collectionName}\`\n\n`;
+
+    collectionsDetail += '| Truong (Field) | Kieu du lieu (Type) | Bat buoc (Required) | Enum / Rang buoc | Tham chieu (Ref) |\n';
+    collectionsDetail += '| :--- | :--- | :---: | :--- | :--- |\n';
+
+    for (const [fName, fInfo] of Object.entries(meta.fields)) {
+      let t = Array.from(fInfo.types).filter(x => x !== 'null').join(' / ') || 'String';
+      if (fInfo.hasOid || fName.endsWith('Id')) t = 'ObjectId';
+      if (fInfo.hasDate) t = 'Date';
+      const req = fInfo.count === meta.totalDocs ? 'Co' : 'Khong';
+      let enumStr = '-';
+      if (isEnumField(fName, fInfo.values)) {
+        enumStr = `\`${Array.from(fInfo.values).join('`, `')}\``;
+      }
+      let refStr = '-';
+      if (fInfo.hasOid || fName.endsWith('Id') || fInfo.types.has('ObjectId')) {
+        refStr = `\`ref: '${inferRefModel(fName)}'\``;
+      }
+      collectionsDetail += `| \`${fName}\` | \`${t}\` | ${req} | ${enumStr} | ${refStr} |\n`;
+    }
+  }
+
+  let apiTable = '| Method | Endpoint | Controller | Route | Model |\n';
+  apiTable += '| :---: | :--- | :--- | :--- | :--- |\n';
+  for (const meta of modelsMeta) {
+    apiTable += `| \`GET\` | \`/api/${meta.collectionName}\` | \`${meta.camelName}.controller.js\` | \`${meta.camelName}.route.js\` | \`${meta.camelName}.model.js\` |\n`;
+    apiTable += `| \`GET\` | \`/api/${meta.collectionName}/:id\` | \`${meta.camelName}.controller.js\` | \`${meta.camelName}.route.js\` | \`${meta.camelName}.model.js\` |\n`;
+    apiTable += `| \`POST\` | \`/api/${meta.collectionName}\` | \`${meta.camelName}.controller.js\` | \`${meta.camelName}.route.js\` | \`${meta.camelName}.model.js\` |\n`;
+    apiTable += `| \`PUT\` | \`/api/${meta.collectionName}/:id\` | \`${meta.camelName}.controller.js\` | \`${meta.camelName}.route.js\` | \`${meta.camelName}.model.js\` |\n`;
+    apiTable += `| \`DELETE\` | \`/api/${meta.collectionName}/:id\` | \`${meta.camelName}.controller.js\` | \`${meta.camelName}.route.js\` | \`${meta.camelName}.model.js\` |\n`;
+  }
+
+  return `# BAN DO LIEN KET DU LIEU & KIEN TRUC HE THONG (SDN302)
+
+> File nay duoc tu dong phan tich va sinh boi khoi-tao.js dua tren du lieu mau tu \`${inputDir}\`.
+
+---
+
+## 1. So do thuc the lien ket (ERD)
+
+${mermaid}
+
+---
+
+## 2. Bang ma tran quan he (Foreign Keys)
+
+${relTable}
+
+---
+
+## 3. Danh muc API CRUD mau
+
+${apiTable}
+
+---
+
+## 4. Chi tiet cau truc tung Collection
+
+${collectionsDetail}
+
+---
+
+## 5. Cu phap Mongoose tham khao
+
+### Truy van kem Populate:
+\`\`\`javascript
+const data = await Model.find().populate('studentId');
+
+const data = await Class.findById(classId).populate('enrollments.studentId');
+
+const data = await Attendance.find({ studentId }).populate({
+  path: 'classId',
+  populate: { path: 'subjectId' }
+});
+\`\`\`
+
+### Kiem tra ObjectId hop le:
+\`\`\`javascript
+const mongoose = require('mongoose');
+if (!mongoose.Types.ObjectId.isValid(id)) {
+  return res.status(400).json({ error: \`Invalid ID: \${id}\` });
+}
+\`\`\`
+`;
+}
+
+function transformBson(val, mongooseInstance) {
+  if (val === null || val === undefined) return val;
+  if (Array.isArray(val)) {
+    return val.map(item => transformBson(item, mongooseInstance));
+  }
+  if (typeof val === 'object') {
+    if (val.$oid) {
+      return mongooseInstance ? new mongooseInstance.Types.ObjectId(val.$oid) : val.$oid;
+    }
+    if (val.$date) {
+      return new Date(val.$date);
+    }
+    const result = {};
+    for (const [k, v] of Object.entries(val)) {
+      result[k] = transformBson(v, mongooseInstance);
+    }
+    return result;
+  }
+  return val;
+}
+
+async function runSeeder(targetInputDir, targetResourceDir) {
+  console.log('\n--- NAP DU LIEU VAO MONGODB (--seed) ---');
+
+  let mongoose, dotenv;
+  try {
+    mongoose = require('mongoose');
+    dotenv = require('dotenv');
+  } catch (e) {
+    const nodeModulesPath = path.join(targetResourceDir, 'node_modules');
+    if (fs.existsSync(nodeModulesPath)) {
+      try {
+        mongoose = require(path.join(nodeModulesPath, 'mongoose'));
+        dotenv = require(path.join(nodeModulesPath, 'dotenv'));
+      } catch (err) {}
+    }
+  }
+
+  if (!mongoose) {
+    console.log('[WARN] Chua cai dat node_modules trong resource.');
+    console.log('[HINT] Chay "cd resource && npm install" roi chay lai "node khoi-tao.js --seed"');
+    return;
+  }
+
+  const envPath = path.join(targetResourceDir, '.env');
+  if (fs.existsSync(envPath) && dotenv) {
+    dotenv.config({ path: envPath });
+  }
+
+  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/su26db';
+  console.log('[INFO] Connecting to MongoDB:', uri);
+
+  try {
+    await mongoose.connect(uri, { serverSelectionTimeoutMS: 3000 });
+    console.log('[INFO] MongoDB connected.');
+
+    const jsonFiles = fs.readdirSync(targetInputDir).filter(f => f.endsWith('.json'));
+    const db = mongoose.connection.db;
+    const summary = [];
+
+    for (const file of jsonFiles) {
+      const collName = file.replace(/\.json$/i, '');
+      const filePath = path.join(targetInputDir, file);
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const docs = transformBson(JSON.parse(raw), mongoose);
+
+      const collection = db.collection(collName);
+      await collection.deleteMany({});
+      if (docs.length > 0) {
+        await collection.insertMany(docs);
+      }
+      summary.push({ Collection: collName, Documents: docs.length, Status: 'Imported' });
+    }
+
+    console.table(summary);
+    console.log('[INFO] Seed completed.\n');
+    await mongoose.disconnect();
+  } catch (err) {
+    console.log('[WARN] Cannot connect to MongoDB:', err.message);
+  }
+}
+
+async function main() {
+  const jsonFiles = fs.readdirSync(inputDir).filter(f => f.endsWith('.json'));
+  if (jsonFiles.length === 0) {
+    console.error(`[ERROR] Khong tim thay file .json trong: ${inputDir}`);
+    process.exit(1);
+  }
+
+  console.log(`[INFO] Found ${jsonFiles.length} JSON files: ${jsonFiles.join(', ')}\n`);
+
+  const modelsDir = path.join(resourceDir, 'models');
+  const controllersDir = path.join(resourceDir, 'controllers');
+  const routesDir = path.join(resourceDir, 'routes');
+
+  [modelsDir, controllersDir, routesDir].forEach(d => {
+    safeMkdirSync(d);
+  });
+
+  try {
+    const oldModels = fs.readdirSync(modelsDir).filter(f => !f.endsWith('.model.js'));
+    oldModels.forEach(f => safeUnlinkSync(path.join(modelsDir, f)));
+    const oldControllers = fs.readdirSync(controllersDir).filter(f => !f.endsWith('.controller.js'));
+    oldControllers.forEach(f => safeUnlinkSync(path.join(controllersDir, f)));
+    const oldRoutes = fs.readdirSync(routesDir).filter(f => !f.endsWith('.route.js'));
+    oldRoutes.forEach(f => safeUnlinkSync(path.join(routesDir, f)));
+  } catch (e) {}
+
+  const modelsMeta = [];
+  const relationships = [];
+
+  console.log('--- 1. MODELS (resource/models/<object>.model.js) ---');
+  for (const file of jsonFiles) {
+    const collName = file.replace(/\.json$/i, '');
+    const modelName = toModelName(collName);
+    const camelName = toCamelCase(collName);
+    const filePath = path.join(inputDir, file);
+
+    const raw = fs.readFileSync(filePath, 'utf-8');
+    const data = JSON.parse(raw);
+
+    const { fields, totalDocs } = analyzeCollection(data, collName);
+    const { code, refFields } = generateModelCode(fields, totalDocs, modelName, collName);
+
+    const outPath = path.join(modelsDir, `${camelName}.model.js`);
+    safeWriteFileSync(outPath, code, 'utf-8');
+    console.log(` [OK] models/${camelName}.model.js`);
+
+    modelsMeta.push({
+      modelName,
+      camelName,
+      collectionName: collName,
+      fields,
+      totalDocs,
+      refFields
+    });
+  }
+
+  for (const meta of modelsMeta) {
+    for (const ref of meta.refFields) {
+      const isSubdoc = ref.includes('.');
+      const fieldPart = isSubdoc ? ref.split('.')[1] : ref;
+      const targetModel = inferRefModel(fieldPart);
+      const targetMeta = modelsMeta.find(m => m.modelName.toLowerCase() === targetModel.toLowerCase());
+
+      relationships.push({
+        fromModel: meta.modelName,
+        fromCollection: meta.collectionName,
+        field: ref,
+        toModel: targetModel,
+        toCollection: targetMeta ? targetMeta.collectionName : `${targetModel.toLowerCase()}s`,
+        isSubdoc
+      });
+    }
+  }
+
+  console.log('\n--- 2. CONTROLLERS (resource/controllers/<object>.controller.js) ---');
+  for (const meta of modelsMeta) {
+    const controllerCode = generateControllerCode(meta.modelName, meta.camelName, meta.collectionName, meta.refFields);
+    const standardPath = path.join(controllersDir, `${meta.camelName}.controller.js`);
+    safeWriteFileSync(standardPath, controllerCode, 'utf-8');
+    console.log(` [OK] controllers/${meta.camelName}.controller.js`);
+  }
+
+  console.log('\n--- 3. ROUTES (resource/routes/<object>.route.js) ---');
+  for (const meta of modelsMeta) {
+    const routeCode = generateRouteCode(meta.modelName, meta.camelName);
+    const outPath = path.join(routesDir, `${meta.camelName}.route.js`);
+    safeWriteFileSync(outPath, routeCode, 'utf-8');
+    console.log(` [OK] routes/${meta.camelName}.route.js (/api/${meta.collectionName})`);
+  }
+
+  console.log('\n--- 4. SERVER (resource/server.js) ---');
+  const serverPath = path.join(resourceDir, 'server.js');
+  const serverCode = generateServerCode(modelsMeta);
+  safeWriteFileSync(serverPath, serverCode, 'utf-8');
+  console.log(` [OK] server.js`);
+
+  console.log('\n--- 5. DOCUMENTATION (LIEN_KET_DU_LIEU.md) ---');
+  const markdownReport = generateMarkdownRelationships(modelsMeta, relationships);
+  const reportDir = path.dirname(resourceDir);
+  const reportPath = isProtectedPath(reportDir) ? path.join(process.cwd(), 'LIEN_KET_DU_LIEU.md') : path.join(reportDir, 'LIEN_KET_DU_LIEU.md');
+  safeWriteFileSync(reportPath, markdownReport, 'utf-8');
+  console.log(` [OK] LIEN_KET_DU_LIEU.md`);
+
+  if (isSeedRequested || isSeedOnly) {
+    await runSeeder(inputDir, resourceDir);
+  } else {
+    console.log('\n[INFO] Chay "node khoi-tao.js --seed" neu muon nap du lieu vao MongoDB.');
+  }
+
+  console.log('\n=== KHOI TAO HOAN TAT ===');
+  console.log(`1. Tai lieu lien ket: ${path.basename(reportPath)}`);
+  console.log(`2. Thu muc code:      ${path.relative(process.cwd(), resourceDir)}`);
+  console.log('3. Chay server:       npm start (hoac nodemon server.js)\n');
+}
+
+main().catch(err => {
+  console.error('[ERROR] Initialization failed:', err);
+  process.exit(1);
+});
