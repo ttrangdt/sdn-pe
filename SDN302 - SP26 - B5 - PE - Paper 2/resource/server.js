@@ -6,11 +6,8 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { connectDb } = require('./dal/database');
 
-const departmentRoute = require('./routes/department.route');
-const employeeRoute = require('./routes/employee.route');
-const locationRoute = require('./routes/location.route');
 const projectRoute = require('./routes/project.route');
-const worksonRoute = require('./routes/workson.route');
+const reportRoute = require('./routes/report.route');
 
 const app = express();
 
@@ -26,13 +23,6 @@ try {
 app.get('/', (req, res) => {
   res.status(200).json({
     message: 'SDN302 Exam API Server is ready',
-    endpoints: [
-      '/api/departments',
-      '/api/employees',
-      '/api/locations',
-      '/api/projects',
-      '/api/worksons'
-    ]
   });
 });
 
@@ -40,11 +30,8 @@ app.get('/api', (req, res) => {
   res.status(200).json({ message: 'Welcome to SDN302 RESTful API Server' });
 });
 
-app.use('/api/departments', departmentRoute);
-app.use('/api/employees', employeeRoute);
-app.use('/api/locations', locationRoute);
 app.use('/api/projects', projectRoute);
-app.use('/api/worksons', worksonRoute);
+app.use('/api/reports', reportRoute);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
@@ -65,13 +52,6 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/databaseNa
       console.log('\n====================================================');
       console.log(`  Server running at: http://localhost:${PORT}`);
       console.log('====================================================');
-      console.log('Available API Endpoints:');
-      console.log(' - http://localhost:' + PORT + '/api/departments');
-      console.log(' - http://localhost:' + PORT + '/api/employees');
-      console.log(' - http://localhost:' + PORT + '/api/locations');
-      console.log(' - http://localhost:' + PORT + '/api/projects');
-      console.log(' - http://localhost:' + PORT + '/api/worksons');
-      console.log('====================================================\n');
     });
   } catch (error) {
     console.error('[ERROR] Cannot start server:', error.message);
