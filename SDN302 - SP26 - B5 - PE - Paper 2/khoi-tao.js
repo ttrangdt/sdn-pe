@@ -164,21 +164,6 @@ function isIsoDateString(val) {
   return typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val) && !isNaN(Date.parse(val));
 }
 
-function isEnumField(fieldName, valuesSet) {
-  if (/name|email|description|address|title|url|img|avatar|phone|comment|content|code|slug|password/i.test(fieldName)) {
-    return false;
-  }
-  if (/status|role|type|gender|category|level|mode|state|payment|priority/i.test(fieldName)) {
-    return true;
-  }
-  const vals = Array.from(valuesSet);
-  if (vals.length >= 2 && vals.length <= 6) {
-    const allAreTokens = vals.every(v => /^[A-Za-z0-9_-]{2,20}$/.test(v));
-    if (allAreTokens) return true;
-  }
-  return false;
-}
-
 function analyzeCollection(data, collectionName) {
   const fields = {};
   const totalDocs = data.length;
@@ -190,7 +175,6 @@ function analyzeCollection(data, collectionName) {
       if (!fields[key]) {
         fields[key] = {
           types: new Set(),
-          values: new Set(),
           count: 0,
           sampleArray: null,
           hasOid: false,
@@ -221,9 +205,6 @@ function analyzeCollection(data, collectionName) {
         fields[key].types.add('Date');
       } else {
         fields[key].types.add(typeof val);
-        if (typeof val === 'string') {
-          fields[key].values.add(val);
-        }
       }
     }
   }
@@ -290,13 +271,6 @@ function generateModelCode(fields, totalDocs, modelName, collectionName) {
             const subRefModel = inferRefModel(subKey);
             refFields.push(`${field}.${subKey}`);
             subFieldProps.push(`  ${subKey}: { type: mongoose.Schema.Types.ObjectId, ref: '${subRefModel}', required: true }`);
-          } else if (subKey === 'status' || isEnumField(subKey, new Set(info.sampleArray.map(x => x[subKey])))) {
-            const distinctVals = Array.from(new Set(info.sampleArray.map(x => x[subKey]).filter(Boolean)));
-            if (distinctVals.length > 0 && distinctVals.length <= 6) {
-              subFieldProps.push(`  ${subKey}: { type: String, enum: [${distinctVals.map(v => `'${v}'`).join(', ')}], default: '${distinctVals[0]}' }`);
-            } else {
-              subFieldProps.push(`  ${subKey}: { type: String, required: true }`);
-            }
           } else {
             subFieldProps.push(`  ${subKey}: { type: String }`);
           }
@@ -314,18 +288,10 @@ ${subFieldProps.join(',\n')}
     }
 
     if (info.types.has('string')) {
-      if (isEnumField(field, info.values)) {
-        const enumValues = Array.from(info.values).map(v => `'${v}'`).join(', ');
-        fieldLines.push(`  ${field}: {
-    type: String,
-    enum: [${enumValues}]${isRequired ? ',\n    required: true' : ''}
-  }`);
-      } else {
-        fieldLines.push(`  ${field}: {
+      fieldLines.push(`  ${field}: {
     type: String${isRequired ? ',\n    required: true' : ''},
     trim: true
   }`);
-      }
       continue;
     }
 
@@ -584,23 +550,19 @@ function generateMarkdownRelationships(modelsMeta, relationships) {
     collectionsDetail += `- **So luong ban ghi mau**: ${meta.totalDocs} documents\n`;
     collectionsDetail += `- **API Endpoint**: \`http://localhost:9999/api/${meta.collectionName}\`\n\n`;
 
-    collectionsDetail += '| Truong (Field) | Kieu du lieu (Type) | Bat buoc (Required) | Enum / Rang buoc | Tham chieu (Ref) |\n';
-    collectionsDetail += '| :--- | :--- | :---: | :--- | :--- |\n';
+    collectionsDetail += '| Truong (Field) | Kieu du lieu (Type) | Bat buoc (Required) | Tham chieu (Ref) |\n';
+    collectionsDetail += '| :--- | :--- | :---: | :--- |\n';
 
     for (const [fName, fInfo] of Object.entries(meta.fields)) {
       let t = Array.from(fInfo.types).filter(x => x !== 'null').join(' / ') || 'String';
       if (fInfo.hasOid || fName.endsWith('Id')) t = 'ObjectId';
       if (fInfo.hasDate) t = 'Date';
       const req = fInfo.count === meta.totalDocs ? 'Co' : 'Khong';
-      let enumStr = '-';
-      if (isEnumField(fName, fInfo.values)) {
-        enumStr = `\`${Array.from(fInfo.values).join('`, `')}\``;
-      }
       let refStr = '-';
       if (fInfo.hasOid || fName.endsWith('Id') || fInfo.types.has('ObjectId')) {
         refStr = `\`ref: '${inferRefModel(fName)}'\``;
       }
-      collectionsDetail += `| \`${fName}\` | \`${t}\` | ${req} | ${enumStr} | ${refStr} |\n`;
+      collectionsDetail += `| \`${fName}\` | \`${t}\` | ${req} | ${refStr} |\n`;
     }
   }
 
