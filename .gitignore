@@ -16,17 +16,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Environment Configuration Files
-# Lưu ý: Các file chứa config nhạy cảm hoặc cấu hình local được bỏ qua
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-*.env.backup
-# Cho phép push các file mẫu .env.example lên GitHub
-!.env.example
-
 # Operating System Files
 # macOS
 .DS_Store
