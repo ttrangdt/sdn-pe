@@ -1,0 +1,48 @@
+[{
+  "_id": {
+    "$oid": "65dd00000000000000000001"
+  },
+  "learnerCode": "HV-001",
+  "fullName": "Phạm Minh Anh",
+  "email": "minhanh.pham@gmail.com"
+},
+{
+  "_id": {
+    "$oid": "65dd00000000000000000002"
+  },
+  "learnerCode": "HV-002",
+  "fullName": "Lê Bảo Hoàng",
+  "email": "hoang.lebao@gmail.com"
+},
+{
+  "_id": {
+    "$oid": "65dd00000000000000000003"
+  },
+  "learnerCode": "HV-003",
+  "fullName": "Đỗ Thu Thảo",
+  "email": "thao.dott@gmail.com"
+},
+{
+  "_id": {
+    "$oid": "65dd00000000000000000004"
+  },
+  "learnerCode": "HV-004",
+  "fullName": "Vũ Khánh Linh",
+  "email": "khanhlinh.vu@gmail.com"
+},
+{
+  "_id": {
+    "$oid": "65dd00000000000000000005"
+  },
+  "learnerCode": "HV-005",
+  "fullName": "Nguyễn Hoàng Nam",
+  "email": "nam.nh@gmail.com"
+},
+{
+  "_id": {
+    "$oid": "65dd00000000000000000006"
+  },
+  "learnerCode": "HV-006",
+  "fullName": "Trần Thanh Tâm",
+  "email": "tam.tran@gmail.com"
+}]

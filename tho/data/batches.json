@@ -1,0 +1,130 @@
+[{
+  "_id": {
+    "$oid": "65bb00000000000000000001"
+  },
+  "batchName": "K24-IELTS-01",
+  "courseId": {
+    "$oid": "65aa00000000000000000001"
+  },
+  "instructorName": "Mr. David Harrison",
+  "status": "OPEN",
+  "registrations": [
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000001"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000002"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000003"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000004"
+      },
+      "status": "dropped"
+    }
+  ]
+},
+{
+  "_id": {
+    "$oid": "65bb00000000000000000002"
+  },
+  "batchName": "K24-IELTS-02",
+  "courseId": {
+    "$oid": "65aa00000000000000000001"
+  },
+  "instructorName": "Ms. Sarah Jenkins",
+  "status": "OPEN",
+  "registrations": [
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000004"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000005"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000006"
+      },
+      "status": "enrolled"
+    }
+  ]
+},
+{
+  "_id": {
+    "$oid": "65bb00000000000000000003"
+  },
+  "batchName": "K24-COM-01",
+  "courseId": {
+    "$oid": "65aa00000000000000000002"
+  },
+  "instructorName": "Cô Nguyễn Phương Mai",
+  "status": "OPEN",
+  "registrations": [
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000001"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000002"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000005"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000006"
+      },
+      "status": "dropped"
+    }
+  ]
+},
+{
+  "_id": {
+    "$oid": "65bb00000000000000000004"
+  },
+  "batchName": "K23-BUS-01",
+  "courseId": {
+    "$oid": "65aa00000000000000000004"
+  },
+  "instructorName": "ThS. Hoàng Anh Tuấn",
+  "status": "CLOSED",
+  "registrations": [
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000003"
+      },
+      "status": "enrolled"
+    },
+    {
+      "learnerId": {
+        "$oid": "65dd00000000000000000004"
+      },
+      "status": "enrolled"
+    }
+  ]
+}]

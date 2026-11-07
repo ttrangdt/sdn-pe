@@ -1,0 +1,36 @@
+[{
+  "_id": {
+    "$oid": "65aa00000000000000000001"
+  },
+  "code": "ENG-IELTS-7.0",
+  "name": "Luyện thi IELTS Chuyên sâu 7.0+",
+  "durationWeeks": 12,
+  "status": "ACTIVE"
+},
+{
+  "_id": {
+    "$oid": "65aa00000000000000000002"
+  },
+  "code": "ENG-COM-ADV",
+  "name": "Tiếng Anh Giao tiếp Nâng cao",
+  "durationWeeks": 8,
+  "status": "ACTIVE"
+},
+{
+  "_id": {
+    "$oid": "65aa00000000000000000003"
+  },
+  "code": "JPN-N3-SPEED",
+  "name": "Tiếng Nhật N3 Cấp tốc",
+  "durationWeeks": 10,
+  "status": "INACTIVE"
+},
+{
+  "_id": {
+    "$oid": "65aa00000000000000000004"
+  },
+  "code": "ENG-BUSINESS",
+  "name": "Tiếng Anh Thương mại & Thuyết trình",
+  "durationWeeks": 6,
+  "status": "ACTIVE"
+}]
