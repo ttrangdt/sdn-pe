@@ -109,47 +109,279 @@ console.log('=== SDN302 FRAMEWORK INITIALIZER WITH JWT AUTH ===');
 console.log(`[INFO] Input JSON:  ${path.resolve(inputDir)}`);
 console.log(`[INFO] Resource:    ${path.resolve(resourceDir)}\n`);
 
-function toModelName(pluralName) {
-  let name = pluralName.replace(/\.json$/i, '').trim();
-  const specialMap = {
-    movies: 'Movie',
-    classes: 'Class',
-    quizzes: 'Quiz',
-    people: 'Person',
-    children: 'Child',
-    criteria: 'Criterion',
-    attendances: 'Attendance',
-    students: 'Student',
-    subjects: 'Subject',
-    rooms: 'Room',
-    showtimes: 'Showtime',
-    tickets: 'Ticket',
-    users: 'User',
-    accounts: 'Account',
-    members: 'Member',
-    categories: 'Category',
-    genres: 'Genre',
-    orders: 'Order',
-    products: 'Product',
-    authors: 'Author',
-    books: 'Book',
-    seats: 'Seat'
+function matchCase(target, source) {
+  if (!source) return target;
+  if (source === source.toUpperCase()) return target.toUpperCase();
+  if (source.charAt(0) === source.charAt(0).toUpperCase()) {
+    return target.charAt(0).toUpperCase() + target.slice(1);
+  }
+  return target;
+}
+
+function singularize(word) {
+  if (!word || typeof word !== 'string') return '';
+  const trimmed = word.trim();
+  if (!trimmed) return '';
+
+  const lower = trimmed.toLowerCase();
+
+  // 1. Danh tu bat quy tac (Irregular Nouns)
+  const irregularMap = {
+    people: 'person',
+    children: 'child',
+    men: 'man',
+    women: 'woman',
+    spokesmen: 'spokesman',
+    spokeswomen: 'spokeswoman',
+    criteria: 'criterion',
+    indices: 'index',
+    indexes: 'index',
+    matrices: 'matrix',
+    vertices: 'vertex',
+    analyses: 'analysis',
+    diagnoses: 'diagnosis',
+    theses: 'thesis',
+    crises: 'crisis',
+    phenomena: 'phenomenon',
+    curricula: 'curriculum',
+    quizzes: 'quiz',
+    quizes: 'quiz',
+    mice: 'mouse',
+    geese: 'goose',
+    teeth: 'tooth',
+    feet: 'foot',
+    oxen: 'ox'
   };
 
-  const lower = name.toLowerCase();
-  if (specialMap[lower]) {
-    return specialMap[lower];
+  if (irregularMap[lower]) {
+    return matchCase(irregularMap[lower], trimmed);
   }
 
+  // 2. Danh tu khong dem duoc hoac dang so it giong so nhieu (Uncountable / Same form)
+  const uncountable = new Set([
+    'data',
+    'information',
+    'equipment',
+    'feedback',
+    'money',
+    'traffic',
+    'software',
+    'hardware',
+    'metadata',
+    'news',
+    'series',
+    'species',
+    'police'
+  ]);
+
+  if (uncountable.has(lower)) {
+    return trimmed;
+  }
+
+  // 3. Neu khong ket thuc bang 's', tu von da la so it
+  if (!lower.endsWith('s')) {
+    return trimmed;
+  }
+
+  // 4. Neu ket thuc bang 'ss' (class, address, access, process, business, pass, boss) -> da la so it
+  if (lower.endsWith('ss')) {
+    return trimmed;
+  }
+
+  // 5. Neu ket thuc bang 'us' ma khong phai 'uses' (status, campus, virus, focus, bonus) -> da la so it
+  if (lower.endsWith('us') && !lower.endsWith('uses')) {
+    return trimmed;
+  }
+
+  // 6. Danh tu co dang so nhieu 'uses' (statuses -> status, buses -> bus, campuses -> campus)
+  const specialUses = {
+    statuses: 'status',
+    buses: 'bus',
+    campuses: 'campus',
+    viruses: 'virus',
+    bonuses: 'bonus',
+    focuses: 'focus',
+    gases: 'gas',
+    gasses: 'gas'
+  };
+  if (specialUses[lower]) {
+    return matchCase(specialUses[lower], trimmed);
+  }
+
+  // 7. Ket thuc bang 'sses' (classes -> class, addresses -> address, glasses -> glass)
+  if (lower.endsWith('sses')) {
+    return trimmed.slice(0, -2);
+  }
+
+  // 8. Ket thuc bang 'ies'
   if (lower.endsWith('ies')) {
-    name = name.slice(0, -3) + 'y';
-  } else if (lower.endsWith('ses') || lower.endsWith('xes') || lower.endsWith('ches') || lower.endsWith('shes')) {
-    name = name.slice(0, -2);
-  } else if (lower.endsWith('s') && !lower.endsWith('ss')) {
-    name = name.slice(0, -1);
+    const ieWords = ['movies', 'cookies', 'zombies', 'ties', 'pies', 'lies'];
+    if (ieWords.includes(lower)) {
+      return trimmed.slice(0, -1); // movies -> movie
+    }
+    const isUpper = trimmed.slice(-1) === trimmed.slice(-1).toUpperCase();
+    return trimmed.slice(0, -3) + (isUpper ? 'Y' : 'y'); // categories -> category
   }
 
-  return name.charAt(0).toUpperCase() + name.slice(1);
+  // 9. Ket thuc bang 'ves'
+  if (lower.endsWith('ves')) {
+    const fWords = {
+      leaves: 'leaf',
+      shelves: 'shelf',
+      halves: 'half',
+      wolves: 'wolf',
+      calves: 'calf',
+      loaves: 'loaf',
+      thieves: 'thief'
+    };
+    if (fWords[lower]) {
+      return matchCase(fWords[lower], trimmed);
+    }
+    const feWords = {
+      knives: 'knife',
+      wives: 'wife',
+      lives: 'life'
+    };
+    if (feWords[lower]) {
+      return matchCase(feWords[lower], trimmed);
+    }
+    return trimmed.slice(0, -1); // archives -> archive, drives -> drive, saves -> save
+  }
+
+  // 10. Ket thuc bang 'shes' (dishes -> dish, wishes -> wish)
+  if (lower.endsWith('shes')) {
+    return trimmed.slice(0, -2);
+  }
+
+  // 11. Ket thuc bang 'ches'
+  if (lower.endsWith('ches')) {
+    if (lower.endsWith('caches') || lower.endsWith('niches') || lower.endsWith('aches')) {
+      return trimmed.slice(0, -1); // caches -> cache, niches -> niche
+    }
+    return trimmed.slice(0, -2); // watches -> watch, matches -> match, branches -> branch
+  }
+
+  // 12. Ket thuc bang 'xes' (boxes -> box, taxes -> tax, fixes -> fix)
+  if (lower.endsWith('xes')) {
+    return trimmed.slice(0, -2);
+  }
+
+  // 13. Ket thuc bang 'zes'
+  if (lower.endsWith('zes')) {
+    if (lower.endsWith('quizzes') || lower.endsWith('quizes')) {
+      return matchCase('quiz', trimmed);
+    }
+    return trimmed.slice(0, -1); // sizes -> size, prizes -> prize
+  }
+
+  // 14. Ket thuc bang 'oes' (heroes -> hero, potatoes -> potato, tomatoes -> tomato)
+  if (lower.endsWith('oes')) {
+    return trimmed.slice(0, -2);
+  }
+
+  // 15. QUY TAC DUOI 'ses' (courses -> course, houses -> house, cases -> case, databases -> database)
+  // Goc tu von tan cung la 'se', khi so nhieu chi them 's' -> khi sang so it CHỈ BỎ 's'
+  if (lower.endsWith('ses')) {
+    return trimmed.slice(0, -1);
+  }
+
+  // 16. Cac tu co goc tan cung la 'e' (services -> service, devices -> device, pages -> page, dates -> date, roles -> role)
+  if (/(?:[cgtkdlnmprv]es)$/i.test(trimmed)) {
+    return trimmed.slice(0, -1);
+  }
+
+  // 17. Quy tac tong quat cho danh tu so nhieu them 's'
+  return trimmed.slice(0, -1);
+}
+
+function pluralize(word) {
+  if (!word || typeof word !== 'string') return '';
+  const trimmed = word.trim();
+  if (!trimmed) return '';
+  const lower = trimmed.toLowerCase();
+
+  const irregularPlural = {
+    person: 'people',
+    child: 'children',
+    man: 'men',
+    woman: 'women',
+    spokesman: 'spokesmen',
+    spokeswoman: 'spokeswomen',
+    criterion: 'criteria',
+    index: 'indices',
+    matrix: 'matrices',
+    vertex: 'vertices',
+    analysis: 'analyses',
+    diagnosis: 'diagnoses',
+    thesis: 'theses',
+    crisis: 'crises',
+    phenomenon: 'phenomena',
+    curriculum: 'curricula',
+    quiz: 'quizzes',
+    mouse: 'mice',
+    goose: 'geese',
+    tooth: 'teeth',
+    foot: 'feet',
+    oxen: 'oxen'
+  };
+
+  if (irregularPlural[lower]) {
+    return matchCase(irregularPlural[lower], trimmed);
+  }
+
+  const uncountable = new Set([
+    'data', 'information', 'equipment', 'feedback', 'money', 'traffic',
+    'software', 'hardware', 'metadata', 'news', 'series', 'species', 'police'
+  ]);
+
+  if (uncountable.has(lower)) {
+    return trimmed;
+  }
+
+  const usWords = {
+    bus: 'buses',
+    gas: 'gases',
+    status: 'statuses',
+    campus: 'campuses',
+    virus: 'viruses',
+    bonus: 'bonuses',
+    focus: 'focuses'
+  };
+  if (usWords[lower]) {
+    return matchCase(usWords[lower], trimmed);
+  }
+
+  // Neu da la so nhieu
+  if (lower.endsWith('courses') || lower.endsWith('classes') || lower.endsWith('categories') || lower.endsWith('students') || lower.endsWith('subjects')) {
+    return trimmed;
+  }
+
+  // ss, sh, ch, x, z -> them es
+  if (lower.endsWith('ss') || lower.endsWith('sh') || lower.endsWith('ch') || lower.endsWith('x') || lower.endsWith('z')) {
+    return trimmed + 'es';
+  }
+
+  // Phu am + y -> ies
+  if (/[bcdfghjklmnpqrstvwxyz]y$/i.test(trimmed)) {
+    return trimmed.slice(0, -1) + (trimmed.slice(-1) === 'Y' ? 'IES' : 'ies');
+  }
+
+  // fe / f -> ves
+  const fMap = {
+    life: 'lives', knife: 'knives', wife: 'wives', leaf: 'leaves',
+    shelf: 'shelves', half: 'halves', wolf: 'wolves', thief: 'thieves'
+  };
+  if (fMap[lower]) {
+    return matchCase(fMap[lower], trimmed);
+  }
+
+  return trimmed + 's';
+}
+
+function toModelName(pluralName) {
+  let name = pluralName.replace(/\.json$/i, '').trim();
+  const sing = singularize(name);
+  return sing.charAt(0).toUpperCase() + sing.slice(1);
 }
 
 function toCamelCase(str) {
@@ -256,7 +488,7 @@ function generateModelCode(fields, totalDocs, modelName, collectionName) {
 
     if (info.types.has('array')) {
       if (info.sampleArray && typeof info.sampleArray[0] === 'object' && !info.sampleArray[0].$oid) {
-        const subSchemaName = `${field.replace(/s$/, '')}Schema`;
+        const subSchemaName = `${toCamelCase(field)}Schema`;
         const subFields = {};
 
         for (const item of info.sampleArray) {
@@ -419,11 +651,17 @@ const router = express.Router();
 const controller = require('../controllers/${camelName}.controller');
 const { verifyToken, authorizeRole } = require('../middlewares/auth.middleware');
 
-router.get('/', controller.getAll);
-router.get('/:id', controller.getById);
-router.post('/', controller.create);
-router.put('/:id', controller.update);
-router.delete('/:id', controller.deleteItem);
+// Mac dinh comment san cac route CRUD de tranh bi de hoac trung lap voi de thi PE.
+// Khi can su dung route nao, hay bo comment o route do:
+// router.get('/', controller.getAll);
+// router.get('/:id', controller.getById);
+// router.post('/', controller.create);
+// router.put('/:id', controller.update);
+// router.delete('/:id', controller.deleteItem);
+
+// Vi du route co bao ve JWT:
+// router.post('/', verifyToken, controller.create);
+// router.delete('/:id', verifyToken, authorizeRole('ADMIN'), controller.deleteItem);
 
 module.exports = router;
 `;
@@ -1179,7 +1417,7 @@ async function main() {
         fromCollection: meta.collectionName,
         field: ref,
         toModel: targetModel,
-        toCollection: targetMeta ? targetMeta.collectionName : `${targetModel.toLowerCase()}s`,
+        toCollection: targetMeta ? targetMeta.collectionName : pluralize(targetModel.toLowerCase()),
         isSubdoc
       });
     }

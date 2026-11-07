@@ -15,10 +15,10 @@ Tai lieu tra cuu nhanh cac cu phap JavaScript, phuong thuc Model Mongoose, Aggre
    - 5.2. [Chuoi phuong thuc bo tro (Query Chain Helpers)](#52-chuoi-phuong-thuc-bo-tro-query-chain-helpers)
    - 5.3. [Toan tu so sanh &amp; Logic trong Mongoose Query](#53-toan-tu-so-sanh--logic-trong-mongoose-query)
    - 5.4. [Phuong thuc Them moi (Create / Insert)](#54-phuong-thuc-them-moi-create--insert)
-   - 5.5. [Phuong thuc Cap nhat (Update)](#55-phuong-thuc-cap-nhat-update)
-   - 5.6. [Cac toan tu cap nhat (Update Operators: $set, $inc, $push, $pull)](#56-cac-toan-tu-cap-nhat-update-operators)
+   - 5.5. [Phuong thuc Cap nhat (Update 1 phan PATCH, Update toan bo PUT, Update 1 ban ghi & Update nhieu ban ghi)](#55-phuong-thuc-cap-nhat-update)
+   - 5.6. [Cac toan tu cap nhat (Update Operators: $set, $unset, $inc, $push, $pull, $[], arrayFilters)](#56-cac-toan-tu-cap-nhat-update-operators)
    - 5.7. [Phuong thuc Xoa (Delete / Remove)](#57-phuong-thuc-xoa-delete--remove)
-   - 5.8. [Thao tac voi Mang Sub-document (Mang nhung: $push, $pull, toan tu $)](#58-thao-tac-voi-mang-sub-document-mang-nhung)
+   - 5.8. [Thao tac voi Mang Sub-document (Update 1 phan tu $, Update nhieu phan tu $[], Loc do dai mang con $expr $filter)](#58-thao-tac-voi-mang-sub-document-mang-nhung)
    - 5.9. [Bo khung Controller CRUD mau chuan chi (Full Template)](#59-bo-khung-controller-crud-mau-chuan-chi-full-template)
 6. [Mongoose Populate (Truy van khoa ngoai)](#6-mongoose-populate-truy-van-khoa-ngoai)
 7. [Mongoose Aggregation Pipeline (Thong ke & Gom nhom chuyen sau)](#7-mongoose-aggregation-pipeline-thong-ke--gom-nhom-chuyen-sau)
@@ -30,6 +30,8 @@ Tai lieu tra cuu nhanh cac cu phap JavaScript, phuong thuc Model Mongoose, Aggre
    - 7.6. [Chi tiet $facet (Phan trang & Tinh tong count trong 1 query duy nhat)](#76-chi-tiet-facet-phan-trang--tinh-tong-count-trong-1-query-duy-nhat)
    - 7.7. [Cac bai toan mau Aggregation kinh dien cho phong thi PE](#77-cac-bai-toan-mau-aggregation-kinh-dien-cho-phong-thi-pe)
 8. [Cac loi thuong gap trong phong thi va cach xu ly](#8-cac-loi-thuong-gap-trong-phong-thi-va-cach-xu-ly)
+9. [Quy luat So it & So nhieu trong Tieng Anh (Singular & Plural Rules cho Model & Collection)](#9-quy-luat-so-it--so-nhieu-trong-tieng-anh-singular--plural-rules-cho-model--collection)
+10. [Chien thuat Hybrid: Ket hop Mongoose lean() va JavaScript (Map, Filter, Reduce, Sort, Slice)](#10-chien-thuat-hybrid-ket-hop-mongoose-lean-va-javascript-map-filter-reduce-sort-slice)
 
 ---
 
@@ -492,85 +494,225 @@ const insertedList = await Student.insertMany([
 
 ---
 
-### 5.5. Phuong thuc Cap nhat (Update)
+### 5.5. Phuong thuc Cap nhat (Update: 1 phan PATCH, toan bo PUT, 1 ban ghi & nhieu ban ghi)
+
+Trong cac de thi PE, yeu cau cap nhat rat da dang: co bai yeu cau chi cap nhat 1 so truong duoc gui len (PATCH), co bai yeu cau cap nhat toan bo (PUT), co bai yeu cau cap nhat dong loat hang loat ban ghi (`updateMany`).
+
+#### 5.5.1. Cap nhat TUNG PHAN (Partial Update - PATCH / Chi sua truong duoc gui, giu nguyen truong cu)
+
+> **Khai niem**: Client chi gui len `{ price: 150 }` hoac `{ status: 'CLOSED' }`. Cac truong khac (nhu `className`, `subjectId`, `enrollments`, `createdAt`) **phai duoc giu nguyen tuyet doi**, khong duoc ghi de lam mat hay rong du lieu cu.
+
+**Cach 1: Dung `$set` voi Object loc du lieu truyen len (Khuyen dung cho API PATCH)**:
+```javascript
+// PATCH /api/classes/:id - Chi sua cac truong hop le duoc gui trong req.body
+const patchClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid ID: ${id}` });
+    }
+
+    // 1. Whitelist cac truong duoc phep sua (chong sua _id, createdAt, role he thong)
+    const allowedFields = ['className', 'lecturerName', 'status'];
+    const updateData = {};
+    for (const key of Object.keys(req.body)) {
+      if (allowedFields.includes(key) && req.body[key] !== undefined) {
+        updateData[key] = req.body[key];
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No valid fields provided for partial update' });
+    }
+
+    // 2. Dung $set de chi cap nhat cac truong trong updateData
+    // Bat buoc co: { new: true, runValidators: true }
+    const updated = await Class.findByIdAndUpdate(
+      id,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: `Class with id = ${id} not found` });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+```
+
+**Cach 2: Dung `findById` -> sua bang JS -> `save()`**:
+```javascript
+const item = await Class.findById(id);
+if (!item) return res.status(404).json({ error: 'Not found' });
+
+// Chi ghi de khi gia tri khac undefined
+if (req.body.className !== undefined) item.className = req.body.className;
+if (req.body.status !== undefined) item.status = req.body.status;
+
+const saved = await item.save(); // Chay validation cua tung truong
+```
+
+---
+
+#### 5.5.2. Cap nhat TOAN BO / THAY THE (Full Update - PUT)
+
+> **Khai niem**: Kiem tra day du tat ca cac truong bat buoc cua document. Neu thieu mot truong bat buoc se tra ve loi 400.
 
 ```javascript
-// 1. Model.findByIdAndUpdate(id, updateData, options)
-// QUAN TRONG: Bat buoc truyen { new: true, runValidators: true }
-// - new: true -> Tra ve ban ghi sau khi da sua (mac dinh false tra ve ban ghi cu)
-// - runValidators: true -> Kich hoat lai kiem tra rang buoc trong Schema
-const updated = await Product.findByIdAndUpdate(req.params.id, req.body, {
-  new: true,
-  runValidators: true,
-});
-if (!updated) {
-  return res.status(404).json({ error: "Item not found" });
-}
+// PUT /api/classes/:id - Cap nhat toan bo thong tin lop hoc
+const putClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { className, subjectId, lecturerName, status } = req.body;
 
-// 2. Model.findOneAndUpdate(filter, updateData, options)
-// Tim ban ghi dau tien khop filter va update
-const updatedUser = await User.findOneAndUpdate(
-  { email: req.body.email },
-  { $set: { lastLogin: new Date() } },
-  { new: true },
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `Invalid ID: ${id}` });
+    }
+
+    // Kiem tra day du cac truong bat buoc theo yeu cau cua PUT
+    if (!className || !subjectId || !lecturerName || !status) {
+      return res.status(400).json({ error: 'Missing required fields: className, subjectId, lecturerName, status' });
+    }
+
+    const updated = await Class.findByIdAndUpdate(
+      id,
+      { className, subjectId, lecturerName, status },
+      { new: true, runValidators: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: `Class with id = ${id} not found` });
+    }
+
+    return res.status(200).json(updated);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+};
+```
+
+---
+
+#### 5.5.3. Cap nhat 1 BAN GHI DUY NHAT (Single Document Update)
+
+```javascript
+// 1. findByIdAndUpdate(id, data, options) - Nhanh nhat theo _id
+const updated = await Product.findByIdAndUpdate(
+  req.params.id,
+  req.body,
+  { new: true, runValidators: true }
 );
 
-// 3. Model.updateOne(filter, updateData)
-// Chi update ban ghi dau tien, tra ve metadata so ban ghi thay doi
-const result1 = await Product.updateOne(
-  { _id: id },
-  { $set: { status: "INACTIVE" } },
-); // Ket qua: { acknowledged: true, modifiedCount: 1, matchedCount: 1 }
+// 2. findOneAndUpdate(filter, data, options) - Cap nhat ban ghi dau tien khop dieu kien bat ky
+const user = await User.findOneAndUpdate(
+  { email: req.body.email },
+  { $set: { lastLogin: new Date() } },
+  { new: true }
+);
 
-// 4. Model.updateMany(filter, updateData)
-// Cap nhat hang loat tat ca cac ban ghi thoa man dieu kien
-const result2 = await Product.updateMany(
-  { category: "Old" },
-  { $set: { category: "New", updatedAt: new Date() } },
+// 3. updateOne(filter, data) - Cap nhat nhung chi tra ve metadata (khong tra ve document)
+const resMeta = await Product.updateOne(
+  { _id: id },
+  { $set: { isAvailable: false } }
+); // Tra ve: { acknowledged: true, modifiedCount: 1, matchedCount: 1 }
+```
+
+---
+
+#### 5.5.4. Cap nhat NHIEU BAN GHI DONG LOAT (Multiple Documents Batch Update - updateMany)
+
+> **Khai niem**: Khi de bai yeu cau: *"Chuyen trang thai tat ca cac lop hoc cua mon hoc X thanh 'CLOSED'"* hoac *"Tang 1 tin chi cho tat ca cac mon hoc co tin chi < 3"*.
+
+```javascript
+// Vi du 1: Cap nhat trang thai hang loat theo dieu kien
+const updateClassesStatus = async (req, res) => {
+  try {
+    const { subjectId } = req.params;
+    const { newStatus } = req.body;
+
+    // updateMany se sua tat ca document thoa man filter
+    const result = await Class.updateMany(
+      { subjectId: subjectId, status: 'OPEN' },
+      { $set: { status: newStatus || 'CLOSED', updatedAt: new Date() } }
+    );
+
+    // Metadata tra ve:
+    // result.matchedCount  : So ban ghi tim thay thoa man filter
+    // result.modifiedCount : So ban ghi thuc su duoc thay doi gia tri
+    return res.status(200).json({
+      message: `Successfully updated ${result.modifiedCount} classes`,
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+// Vi du 2: Tang gia / Cong don so hoc hang loat bang $inc hoac $mul
+await Product.updateMany(
+  { category: 'Electronics' },
+  {
+    $inc: { stock: 10 },    // Tang stock moi san pham them 10
+    $mul: { price: 1.05 }   // Tang gia moi san pham them 5%
+  }
 );
 ```
 
 ---
 
-### 5.6. Cac toan tu cap nhat (Update Operators)
+### 5.6. Cac toan tu cap nhat (Update Operators: $set, $unset, $inc, $mul, $push, $pull, $addToSet)
 
 ```javascript
-// 1. $set: Gan gia tri moi cho cac field cu the (khong lam mat cac field khac)
+// 1. $set: Gan gia tri moi cho field (khong lam mat cac field khac)
 await Product.findByIdAndUpdate(id, {
-  $set: { price: 250, status: "OPEN" },
+  $set: { price: 250, status: "OPEN" }
 });
 
-// 2. $unset: Xoa bo hoan toan mot field khoi document
+// 2. $unset: Xoa bo han 1 truong khoi document
 await Product.findByIdAndUpdate(id, {
-  $unset: { oldField: "" },
+  $unset: { oldField: "" }
 });
 
-// 3. $inc: Tang hoac giam gia tri so (cong/tru gia tri)
+// 3. $inc: Tang hoac giam gia tri so hoc (cong don / tru bot)
 await Product.findByIdAndUpdate(id, {
-  $inc: { views: 1, stock: -5 }, // Tang views len 1, giam stock di 5
+  $inc: { views: 1, stock: -5 } // Tang views len 1, giam stock di 5
 });
 
-// 4. $push: Them phan tu vao mang
-await Class.findByIdAndUpdate(
-  classId,
-  {
-    $push: { enrollments: { studentId, status: "enrolled" } },
-  },
-  { new: true },
-);
+// 4. $mul: Nhan gia tri voi mot he so (vi du giam gia 10%: nhan 0.9)
+await Product.findByIdAndUpdate(id, {
+  $mul: { price: 0.9 }
+});
 
-// 5. $pull: Xoa phan tu khoi mang theo dieu kien
-await Class.findByIdAndUpdate(
-  classId,
-  {
-    $pull: { enrollments: { studentId: targetStudentId } },
-  },
-  { new: true },
-);
+// 5. $push: Them 1 phan tu vao mang
+await Class.findByIdAndUpdate(classId, {
+  $push: { enrollments: { studentId, status: "enrolled" } }
+}, { new: true });
 
-// 6. $addToSet: Them vao mang neu CHUA TON TAI (tranh trung lap gia tri)
+// 6. $push + $each: Them NHIEU PHAN TU CUNG LUC vao mang
+await Class.findByIdAndUpdate(classId, {
+  $push: {
+    enrollments: {
+      $each: [
+        { studentId: id1, status: "enrolled" },
+        { studentId: id2, status: "enrolled" }
+      ]
+    }
+  }
+}, { new: true });
+
+// 7. $pull: Xoa 1 hoac nhieu phan tu khoi mang theo dieu kien
+await Class.findByIdAndUpdate(classId, {
+  $pull: { enrollments: { studentId: targetStudentId } }
+}, { new: true });
+
+// 8. $addToSet: Them vao mang neu CHUA TON TAI (chong trung lap)
 await User.findByIdAndUpdate(userId, {
-  $addToSet: { roles: "ADMIN" },
+  $addToSet: { roles: "ADMIN" }
 });
 ```
 
@@ -611,32 +753,345 @@ await Product.deleteMany({});
 
 Trong SDN302, cac de thi rat hay cho mảng sub-documents (vi du `Class` chua mang `enrollments: [{ studentId, status }]`):
 
-```javascript
-// 1. Tim cac Class ma mot Student cu the dang theo hoc:
-const studentClasses = await Class.find({ "enrollments.studentId": studentId });
+#### 5.8.1. Cac thao tac Tim kiem, Them, Xoa va Cap nhat mang Sub-document
 
-// 2. Them 1 sinh vien vao lop ($push):
+##### A. Tim kiem trong mang (Querying Arrays)
+
+```javascript
+// 1. Tim cac Class chua mot sinh vien cu the:
+const classes = await Class.find({ "enrollments.studentId": studentId });
+
+// 2. Tim bang $elemMatch khi can khop DONG THOI nhieu truong trong cung 1 sub-document:
+// (Vi du: Lop co sinh vien studentId va sinh vien do phai co status la 'enrolled')
+const enrolledClasses = await Class.find({
+  enrollments: {
+    $elemMatch: { studentId: studentId, status: "enrolled" },
+  },
+});
+```
+
+##### B. Them phan tu vao mang (Insert / Push)
+
+```javascript
+// 1. Them 1 phan tu vao cuoi mang ($push):
 const updated = await Class.findByIdAndUpdate(
   classId,
   { $push: { enrollments: { studentId, status: "enrolled" } } },
   { new: true, runValidators: true },
 );
 
-// 3. Xoa 1 sinh vien khoi lop ($pull):
-const updated = await Class.findByIdAndUpdate(
+// 2. Them NHIEU phan tu cung luc vao mang ($push + $each):
+const updatedMany = await Class.findByIdAndUpdate(
   classId,
-  { $pull: { enrollments: { studentId } } },
+  {
+    $push: {
+      enrollments: {
+        $each: [
+          { studentId: id1, status: "enrolled" },
+          { studentId: id2, status: "enrolled" },
+        ],
+      },
+    },
+  },
+  { new: true, runValidators: true },
+);
+
+// 3. Them phan tu neu CHUA TON TAI ($addToSet - chong trung lap):
+await Class.findByIdAndUpdate(classId, {
+  $addToSet: { tags: "NODEJS" },
+});
+```
+
+##### C. Xoa phan tu khoi mang (Delete / Pull)
+
+```javascript
+// 1. Xoa 1 phan tu cu the theo studentId ($pull):
+const afterRemoveOne = await Class.findByIdAndUpdate(
+  classId,
+  { $pull: { enrollments: { studentId: targetStudentId } } },
   { new: true },
 );
 
-// 4. Cap nhat status cua 1 sinh vien cu the trong lop (Dung toan tu vi tri '$'):
-// Luu y: Dieu kien tim kiem phai chi ro phan tu mang thi moi dung duoc '$'
+// 2. Xoa NHIEU phan tu thoa dieu kien ($pull + $in hoac so sanh):
+// Vi du: Xoa tat ca sinh vien co status la 'dropped' hoac 'cancelled'
+const afterRemoveMany = await Class.findByIdAndUpdate(
+  classId,
+  {
+    $pull: {
+      enrollments: { status: { $in: ["dropped", "cancelled"] } },
+    },
+  },
+  { new: true },
+);
+
+// Xoa tat ca cac sub-doc co diem so < 5:
+await Student.findByIdAndUpdate(studentId, {
+  $pull: { scores: { value: { $lt: 5 } } },
+});
+```
+
+##### D. Cap nhat phan tu trong mang (Update Array Elements - 4 Truong hop cot loi)
+
+> **Luu y quan trong**: Cap nhat field binh thuong chi can `$set: { field: val }`, nhung khi cap nhat ben trong MANG SUB-DOCUMENT, phai chon dung 1 trong 4 ky thuat duoi day tuy theo de bai.
+
+###### Truong hop 1: Cap nhat 1 PHAN TU DAU TIEN khop dieu kien (Toan tu vi tri `$`)
+*Khi nao dung?* Khi ban biet lop do va biet sinh vien cu the can cap nhat trang thai.
+*Quy tac*: Bat buoc filter tim kiem phai chi ro field cua mang de MongoDB biet con tro `$` dang tro vao dau.
+
+```javascript
+// Cap nhat status cua 1 sinh vien cu the trong lop thanh 'dropped'
 const updated = await Class.findOneAndUpdate(
   { _id: classId, "enrollments.studentId": studentId },
-  { $set: { "enrollments.$.status": "dropped" } },
+  {
+    $set: {
+      "enrollments.$.status": "dropped",
+      "enrollments.$.updatedAt": new Date(),
+    },
+  },
+  { new: true, runValidators: true },
+);
+```
+
+###### Truong hop 2: Cap nhat TAT CA CAC PHAN TU trong mang (Toan tu `$[]`)
+*Khi nao dung?* Khi de bai yeu cau doi trang thai toan bo thanh vien trong lop (vi du: ket thuc khoa hoc, doi tat ca sinh vien thanh `completed` hoac `inactive`).
+
+```javascript
+// Chuyen status cua TAT CA sinh vien trong lop thanh 'completed'
+const updatedAll = await Class.findByIdAndUpdate(
+  classId,
+  {
+    $set: { "enrollments.$[].status": "completed" },
+  },
   { new: true },
 );
 ```
+
+###### Truong hop 3: Cap nhat NHIEU PHAN TU THOA DIEU KIEN trong mang (Toan tu `$[<identifier>]` + `arrayFilters`)
+*Khi nao dung?* Khi de yeu cau: *"Chuyen tat ca sinh vien dang o trang thai 'pending' thanh 'rejected'"* hoac *"Cong 1 diem cho tat ca cac bai kiem tra co diem < 5"*.
+
+```javascript
+// Vi du 1: Cap nhat trang thai cua tat ca phan tu co status === 'pending'
+const updatedFiltered = await Class.findByIdAndUpdate(
+  classId,
+  {
+    $set: { "enrollments.$[elem].status": "rejected" },
+  },
+  {
+    arrayFilters: [{ "elem.status": "pending" }],
+    new: true,
+  },
+);
+
+// Vi du 2: Tang gia tri so hoc cho nhieu phan tu thoa dieu kien ($inc + arrayFilters)
+const updatedScores = await Student.findByIdAndUpdate(
+  studentId,
+  {
+    $inc: { "scores.$[item].value": 1 }, // Tang 1 diem
+  },
+  {
+    arrayFilters: [{ "item.value": { $lt: 5 } }], // Chi tang cho cac bai co diem < 5
+    new: true,
+  },
+);
+```
+
+###### Truong hop 4: Cap nhat mang Sub-documents bang JavaScript thuan (Cach cuu canh sieu de nho trong phong thi)
+*Khuyen dung khi*: Logic sua doi phuc tap, can ket hop tinh toan, if/else ma khong nho noi cu phap `arrayFilters` cua MongoDB.
+
+```javascript
+// Router Handler cap nhat mang sub-doc bang JS thuan:
+const updateSubdocWithJS = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { studentId, newStatus } = req.body;
+
+    // 1. Lay document ra
+    const targetClass = await Class.findById(classId);
+    if (!targetClass) {
+      return res
+        .status(404)
+        .json({ error: `Class with id = ${classId} not found` });
+    }
+
+    // 2. Thao tac truc tiep tren mang JavaScript thuan tuy:
+    // A. Sua 1 phan tu:
+    const targetEnrollment = targetClass.enrollments.find(
+      (e) => String(e.studentId) === String(studentId),
+    );
+    if (targetEnrollment) {
+      targetEnrollment.status = newStatus || "dropped";
+    }
+
+    // B. Sua nhieu phan tu thoa dieu kien:
+    // targetClass.enrollments.forEach((e) => {
+    //   if (e.status === 'pending') e.status = 'rejected';
+    // });
+
+    // 3. Luu nguoc lai vao database (Mongoose tu validate va update)
+    const saved = await targetClass.save();
+
+    return res.status(200).json(saved);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+```
+
+---
+
+#### 5.8.2. Truy van find() loc theo DO DAI MANG CON DA QUA LOC DIEU KIEN ($expr + $size + $filter)
+
+> **Van de thuc te thuong gap trong de thi PE**:
+> - De bai yeu cau: *"Lay danh sach cac lop hoc co so luong sinh vien dang ky hop le (`status === 'enrolled'`) toi thieu `X` nguoi"*.
+> - **Vi sao kho?** Toan tu `{ enrollments: { $size: 5 } }` mac dinh cua MongoDB **chi nhan so co dinh**, KHONG chap nhan `{ $gte: 5 }` (se bao loi neu truyen `$gte` vao `$size` thuong). Dong thoi `$size` thuong dem toan bo mang chu khong loc theo trang thai con ben trong.
+
+Duoi day la **4 giai phap thuc chien** tu truc tiep trong `find()` den `aggregate()` va `in-memory`:
+
+##### Cach 1: Dung `$expr` + `$size` + `$filter` truc tiep trong `find()` (Chuan nhat va manh nhat)
+Cho phep nhung bieu thuc aggregation vao lenh `Model.find()` de loc mang con roi moi dem do dai:
+
+```javascript
+// Lay cac lop hoc co it nhat minMembers sinh vien co status la 'enrolled'
+const minMembers = Number(req.query.minMembers) || 3;
+
+const classes = await Class.find({
+  $expr: {
+    $gte: [
+      {
+        $size: {
+          $filter: {
+            input: '$enrollments',                           // Mang con can loc
+            as: 'item',                                      // Ten bien dai dien cho phan tu mang
+            cond: { $eq: ['$$item.status', 'enrolled'] }     // Dieu kien loc phan tu (dung 2 dau $$)
+          }
+        }
+      },
+      minMembers                                             // So luong toi thieu
+    ]
+  }
+});
+```
+
+*Giai thich cu phap*:
+1. `$expr`: Cho phep su dung cu phap bieu thuc cua Aggregation ngay trong ham `Model.find()`.
+2. `$filter`: Loc mang `enrollments`, chi giu lai cac object thoa man `$$item.status === 'enrolled'`.
+3. `$size`: Tinh do dai cua mang da loc.
+4. `$gte: [do_dai_sau_loc, minMembers]`: So sanh lon hon hoac bang.
+
+---
+
+##### Cach 2: Truong hop de chi yeu cau do dai mang goc (chua can loc con) `>= X`
+
+Neu de bai chi hoi: *"Lop hoc co it nhat X thanh vien (khong phan biet status)"*:
+
+**Cach 2A: Dung `$expr` va `$size` trong `find()`**:
+```javascript
+const minCount = Number(req.query.minCount) || 5;
+
+const classes = await Class.find({
+  $expr: {
+    $gte: [{ $size: '$enrollments' }, minCount]
+  }
+});
+```
+
+**Cach 2B: Meo kiem tra su ton tai cua Index trong mang (Sieu nhanh, khong can `$expr`)**:
+```javascript
+// Neu mang co it nhat 5 phan tu, nghia la phan tu o vi tri index 4 (0, 1, 2, 3, 4) PHAI TON TAI!
+const classes = await Class.find({
+  'enrollments.4': { $exists: true }
+});
+
+// Neu muon mang co tu 3 den 10 phan tu:
+const classes = await Class.find({
+  'enrollments.2': { $exists: true }, // Co it nhat 3 phan tu (index 0, 1, 2)
+  'enrollments.10': { $exists: false } // Khong co phan tu thu 11 (index 10)
+});
+```
+
+---
+
+##### Cach 3: Dung `aggregate()` (Khi can tra ve them ca truong so luong dem duoc ra JSON)
+Dung khi de bai yeu cau tra ve them truong `totalEnrolled`:
+
+```javascript
+const minMembers = Number(req.query.minMembers) || 3;
+
+const classes = await Class.aggregate([
+  // 1. Tinh truoc do dai cua mang sau khi loc
+  {
+    $addFields: {
+      enrolledCount: {
+        $size: {
+          $filter: {
+            input: '$enrollments',
+            as: 'e',
+            cond: { $eq: ['$$e.status', 'enrolled'] }
+          }
+        }
+      }
+    }
+  },
+  // 2. Loc theo so luong vua tinh
+  {
+    $match: {
+      enrolledCount: { $gte: minMembers }
+    }
+  }
+]);
+```
+
+---
+
+##### Cach 4: Dung ket hop map va filter cua JavaScript thuan (Cach de hieu, truc quan va de debug nhat)
+
+Thay vi phai nho cac cu phap phuc tap cua MongoDB nhu `$expr`, `$filter`, `$cond`, cach tiep can **cuc ky de hieu va luon an diem 100%** trong phong thi la:
+1. Goi `Model.find().lean()` (kem `populate` neu can) de lay ve mang Plain JavaScript Objects.
+2. Dung `map` de duyet tung document, dung `filter` loc mang con va gan them field (nhu `activeCount`, `activeEnrollments`).
+3. Dung `filter` o cap ngoai de loc cac document co `activeCount >= minMembers`.
+
+```javascript
+// Vi du: Loc cac lop co it nhat minMembers sinh vien co status === 'enrolled'
+const getClassesByActiveMembers = async (req, res) => {
+  try {
+    const minMembers = Number(req.query.minMembers) || 3;
+
+    // 1. Lay du lieu tu Mongo kem .lean() de co Object JS thuan
+    const classes = await Class.find()
+      .populate('subjectId', 'name code')
+      .populate('enrollments.studentId', 'studentCode fullName')
+      .lean();
+
+    // 2. Dung MAP: Duyet qua tung lop, dung filter loc mang con enrollments va gan them activeCount
+    const processedClasses = classes.map(c => {
+      // Loc mang con: chi giu lai sinh vien co status la 'enrolled'
+      const activeEnrollments = (c.enrollments || []).filter(e => e.status === 'enrolled');
+
+      return {
+        ...c,
+        activeCount: activeEnrollments.length,        // Field moi chua so luong thanh vien hop le
+        activeEnrollments: activeEnrollments          // Field moi chua danh sach da loc
+      };
+    });
+
+    // 3. Dung FILTER: Loc nhung lop co activeCount >= minMembers
+    const result = processedClasses.filter(c => c.activeCount >= minMembers);
+
+    // 4. (Tuy chon) Dung SORT de sap xep lop dong sinh vien nhat len dau
+    result.sort((a, b) => b.activeCount - a.activeCount);
+
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+```
+
+*Vi sao cach nay cuc ky duoc khuyen khich khi thi PE?*
+- Khong so sai cu phap `$expr` hay `$$` cua MongoDB.
+- Dung duoc `console.log()` de in ra kiem tra du lieu o bat ky buoc nao (`classes`, `processedClasses`, `result`).
+- De thi PE chi co tu 10 - 50 documents nen xu ly in-memory bang JS chay tuc thi (duoi 5ms), khong anh huong den hieu nang.
+- Xem them chi tiet day du o [Muc 10. Chien thuat Hybrid](#10-chien-thuat-hybrid-ket-hop-mongoose-lean-va-javascript-map-filter-reduce-sort-slice).
 
 ---
 
@@ -1444,3 +1899,316 @@ const result = await Class.aggregate([
 | Ket qua tra ve kem field password hoac token                                                                                                         | Chua bo field nhay cam truoc khi response.                    | Trong Mongoose query dung `.select('-password')` hoac `delete user.password` sau `.toObject()`.           |  |  |  |
 | `findByIdAndUpdate` tra ve du lieu cu truoc khi update                                                                                             | Mac dinh Mongoose tra ve document truoc update.               | Luon truyen options `{ new: true, runValidators: true }`.                                                     |  |  |  |
 | Update mang sub-doc bi de toan bo mang                                                                                                               | Gan de gia tri mang thay vi dung toan tu mang.                | Dung `$push` de them, `$pull` de xoa, `$set: { 'arr.$.field': val }` de update phan tu.                   |  |  |  |
+
+---
+
+## 9. QUY LUAT SO IT & SO NHIEU TRONG TIENG ANH (SINGULAR & PLURAL RULES CHO MODEL & COLLECTION)
+
+Trong Mongoose va MongoDB, Collection thuong o dang **So nhieu (Plural, chu thuong)** con Model thuong o dang **So it (Singular, PascalCase)**. 
+
+> **Vi sao co loi `courses` thanh `cours`?**
+> - Mot so thuat toan don gian chi kiem tra `endsWith('ses')` va cat 2 ky tu `es`, khien `courses` bi cat thanh `cours` (sai).
+> - Thuc te: Goc tu la `course` da ket thuc bang chu `e`. Khi sang so nhieu no **chi them `s`** (`course + s = courses`). Do do khi chuyen ve so it, **chi duoc bo `s`** de tra ve `course`!
+
+---
+
+### 9.1. Bang quy tac khi nao bo `-es`, khi nao chi bo `-s`
+
+| Nhom quy tac | Dang so nhieu (Collection) | Dang so it (Model) | Quy tac bien doi | Vi du minh hoa |
+| :--- | :--- | :--- | :--- | :--- |
+| **Goc tan cung '-se'** | `courses`, `houses`, `cases`, `databases`, `licenses`, `responses`, `releases` | `Course`, `House`, `Case`, `Database`, `License`, `Response`, `Release` | **Chi bo `s`** (vi goc tu da co san `e`) | `courses` -> `Course` *(khong phai Cours)*, `databases` -> `Database` |
+| **Goc tan cung '-e' khac** (`-ce`, `-ze`, `-ge`, `-te`, `-de`, `-re`) | `services`, `devices`, `prices`, `sizes`, `pages`, `dates`, `grades`, `stores`, `genres` | `Service`, `Device`, `Price`, `Size`, `Page`, `Date`, `Grade`, `Store`, `Genre` | **Chi bo `s`** | `services` -> `Service`, `devices` -> `Device`, `sizes` -> `Size` |
+| **Tan cung bang 'sses'** | `classes`, `addresses`, `glasses`, `processes`, `businesses`, `passes` | `Class`, `Address`, `Glass`, `Process`, `Business`, `Pass` | **Bo `es`** (tra ve tan cung `ss`) | `classes` -> `Class`, `addresses` -> `Address` |
+| **Tan cung am rit (`-sh`, `-ch`, `-x`)** | `dishes`, `wishes`, `watches`, `matches`, `branches`, `boxes`, `taxes`, `indexes` | `Dish`, `Wish`, `Watch`, `Match`, `Branch`, `Box`, `Tax`, `Index` | **Bo `es`** | `boxes` -> `Box`, `watches` -> `Watch`, `dishes` -> `Dish` |
+| **Tan cung Phu am + 'ies'** | `categories`, `cities`, `companies`, `countries`, `faculties`, `stories` | `Category`, `City`, `Company`, `Country`, `Faculty`, `Story` | **Bo `ies` thay bang `y`** | `categories` -> `Category`, `cities` -> `City` |
+| **Tan cung Nguyen am + 'ys' hoac '-ie'** | `days`, `boys`, `keys`, `movies`, `cookies`, `zombies` | `Day`, `Boy`, `Key`, `Movie`, `Cookie`, `Zombie` | **Chi bo `s`** | `movies` -> `Movie`, `days` -> `Day` |
+| **Tan cung 'uses' (goc '-us')** | `statuses`, `buses`, `campuses`, `viruses`, `bonuses`, `focuses`, `gases` | `Status`, `Bus`, `Campus`, `Virus`, `Bonus`, `Focus`, `Gas` | **Bo `es`** (hoac giu nguyen `status` neu da la so it) | `statuses` -> `Status`, `buses` -> `Bus` |
+| **Tan cung '-ves'** | `leaves`, `shelves`, `halves`, `knives`, `lives`, `archives`, `drives` | `Leaf`, `Shelf`, `Half`, `Knife`, `Life`, `Archive`, `Drive` | `ves` -> `f`/`fe` (rieng tu cong nghe `-ve` chi bo `s`) | `leaves` -> `Leaf`, `knives` -> `Knife`, `archives` -> `Archive` |
+| **Bat quy tac (Irregular)** | `people`, `children`, `criteria`, `quizzes`, `indices`, `matrices`, `men`, `women` | `Person`, `Child`, `Criterion`, `Quiz`, `Index`, `Matrix`, `Man`, `Woman` | **Tra cuu bang tu dien** | `people` -> `Person`, `children` -> `Child`, `quizzes` -> `Quiz` |
+| **Khong dem duoc / Giu nguyen** | `data`, `information`, `equipment`, `feedback`, `money`, `software`, `news`, `series` | `Data`, `Information`, `Equipment`, `Feedback`, `Money`, `Software`, `News`, `Series` | **Giu nguyen** | `data` -> `Data`, `feedback` -> `Feedback` |
+| **So nhieu quy tac chung (+s)** | `students`, `subjects`, `books`, `orders`, `products`, `users`, `tickets`, `rooms` | `Student`, `Subject`, `Book`, `Order`, `Product`, `User`, `Ticket`, `Room` | **Bo `s`** | `students` -> `Student`, `subjects` -> `Subject` |
+
+---
+
+### 9.2. Ma JavaScript chuan chuyen doi So it / So nhieu (Singularize & Pluralize)
+
+Day la thuat toan da duoc tich hop truc tiep trong `khoi-tao.js` va `khoi-tao-jwt.js`:
+
+```javascript
+function singularize(word) {
+  if (!word || typeof word !== 'string') return '';
+  const trimmed = word.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Bat quy tac
+  const irregular = {
+    people: 'person', children: 'child', criteria: 'criterion',
+    quizzes: 'quiz', indices: 'index', matrices: 'matrix',
+    men: 'man', women: 'woman', mice: 'mouse'
+  };
+  if (irregular[lower]) return irregular[lower];
+
+  // 2. Khong dem duoc
+  const uncountable = new Set(['data', 'information', 'equipment', 'feedback', 'news', 'software']);
+  if (uncountable.has(lower)) return trimmed;
+
+  // 3. Neu khong co 's' hoac tan cung 'ss'/'us' -> da la so it
+  if (!lower.endsWith('s') || lower.endsWith('ss') || (lower.endsWith('us') && !lower.endsWith('uses'))) {
+    return trimmed;
+  }
+
+  // 4. statuses -> status, buses -> bus
+  const specialUses = { statuses: 'status', buses: 'bus', campuses: 'campus', gases: 'gas' };
+  if (specialUses[lower]) return specialUses[lower];
+
+  // 5. classes -> class, addresses -> address
+  if (lower.endsWith('sses')) return trimmed.slice(0, -2);
+
+  // 6. movies -> movie (chi bo s); categories -> category (ies -> y)
+  if (lower.endsWith('ies')) {
+    if (['movies', 'cookies', 'zombies', 'ties', 'pies'].includes(lower)) return trimmed.slice(0, -1);
+    return trimmed.slice(0, -3) + 'y';
+  }
+
+  // 7. leaves -> leaf, knives -> knife; archives -> archive
+  if (lower.endsWith('ves')) {
+    if (['leaves', 'shelves', 'halves', 'wolves'].includes(lower)) return trimmed.slice(0, -3) + 'f';
+    if (['knives', 'wives', 'lives'].includes(lower)) return trimmed.slice(0, -3) + 'fe';
+    return trimmed.slice(0, -1); // archives -> archive, drives -> drive
+  }
+
+  // 8. dishes -> dish, boxes -> box, watches -> watch
+  if (lower.endsWith('shes') || lower.endsWith('xes')) return trimmed.slice(0, -2);
+  if (lower.endsWith('ches')) {
+    if (lower.endsWith('caches') || lower.endsWith('niches')) return trimmed.slice(0, -1);
+    return trimmed.slice(0, -2);
+  }
+
+  // 9. QUY TAC VANG: courses -> course, houses -> house, cases -> case, databases -> database
+  // Goc tu von tan cung la 'se' -> CHI BO 's'
+  if (lower.endsWith('ses')) return trimmed.slice(0, -1);
+
+  // 10. Goc tu von tan cung la 'e': services -> service, devices -> device, dates -> date, roles -> role
+  if (/(?:[cgtkdlnmprv]es)$/i.test(trimmed)) return trimmed.slice(0, -1);
+
+  // 11. Quy tac mac dinh
+  return trimmed.slice(0, -1);
+}
+```
+
+---
+
+## 10. CHIEN THUAT HYBRID: KET HOP MONGOOSE LEAN() VA JAVASCRIPT (MAP, FILTER, REDUCE, SORT, SLICE)
+
+Trong phong thi Practical Exam (PE) mon SDN302, du lieu thuong chi tu **10 den 100 documents**. Khi gap cac de bai phuc tap (nhu loc theo so luong phan tu mang con da qua loc, tinh tong / trung binh da cap, xep loai phuc tap, tim kiem da truong), viec co viet cu phap MongoDB/Aggregation phuc tap (`$expr`, `$filter`, `$cond`, `$switch`, `$facet`) rat de bi:
+- Sai cu phap `$`, `$$`, `$expr`.
+- Nhieu loi kho debug vi MongoDB khong hien thi chi tiet tung buoc tinh toan.
+
+**Chien thuat Hybrid (Query Lean -> Xu ly bang JavaScript thuan)** la phuong phap giai quyet cuc ky don gian, de hieu va luon hoat dong 100%:
+
+### 10.1. Quy trinh 5 buoc cua Chien thuat Hybrid
+
+```
+[B1: Mongoose Query] -> [B2: Map] -> [B3: Filter] -> [B4: Sort] -> [B5: Slice (Phan trang)]
+  find().lean()          Tinh toan     Loc dieu kien   Sap xep       Cat trang (page, limit)
+```
+
+> **Luu y toi quan trong**: Luon them `.lean()` o cuoi cau query Mongoose (vi du: `Model.find().lean()`).
+> Lenh `.lean()` bien ket qua tra ve thanh Plain JavaScript Object thuan tuy, giup ban thoai mai them/sua truong, dung spread operator `{ ...item, newField: 123 }` ma khong bi Mongoose Schema chan lai.
+
+---
+
+### 10.2. Mau 1: Loc lop hoc theo so luong thanh vien tham gia (status === 'enrolled') bang map + filter
+
+De bai: *Lay danh sach cac lop hoc co it nhat `minMembers` sinh vien co status la `enrolled`, kem theo ten mon hoc va tong so thanh vien cua lop:*
+
+```javascript
+const getClassesByActiveCount = async (req, res) => {
+  try {
+    const minMembers = Number(req.query.minMembers) || 1;
+
+    // 1. Lay toan bo lop hoc kem lean() va populate
+    const classes = await Class.find()
+      .populate('subjectId', 'name code')
+      .populate('enrollments.studentId', 'studentCode fullName email')
+      .lean();
+
+    // 2. DUNG MAP: Tinh toan cac truong can thiet cho tung lop
+    const processed = classes.map(c => {
+      // Loc danh sach sinh vien dang theo hoc (status === 'enrolled')
+      const activeList = (c.enrollments || []).filter(e => e.status === 'enrolled');
+
+      return {
+        ...c,
+        activeCount: activeList.length,                // So luong sinh vien dang hoc
+        totalCount: (c.enrollments || []).length,     // Tong so luong ghi danh
+        activeEnrollments: activeList                 // Danh sach chi tiet da loc
+      };
+    });
+
+    // 3. DUNG FILTER: Loc cac lop co activeCount >= minMembers
+    const matchedClasses = processed.filter(c => c.activeCount >= minMembers);
+
+    return res.status(200).json(matchedClasses);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+```
+
+---
+
+### 10.3. Mau 2: Quy trinh Controller hoan chinh (Filter da dieu kien + Map + Sort + Slice phan trang)
+
+De bai: *Viet API GET `/api/classes` ho tro tim kiem theo keyword (ten lop hoac ten mon), loc so luong sinh vien toi thieu `minStudents`, sap xep tang/giam theo so luong sinh vien, va phan trang:*
+
+```javascript
+const getClassesWithSearchAndPagination = async (req, res) => {
+  try {
+    const {
+      keyword,
+      minStudents = 0,
+      sortBy = 'activeCount',
+      order = 'desc',
+      page = 1,
+      limit = 10
+    } = req.query;
+
+    // 1. Query Mongoose co ban voi lean()
+    let data = await Class.find()
+      .populate('subjectId', 'name code')
+      .populate('enrollments.studentId', 'studentCode fullName')
+      .lean();
+
+    // 2. MAP: Tinh toan thong tin bo sung
+    data = data.map(item => {
+      const activeEnrollments = (item.enrollments || []).filter(e => e.status === 'enrolled');
+      return {
+        ...item,
+        activeCount: activeEnrollments.length,
+        totalEnrollments: (item.enrollments || []).length
+      };
+    });
+
+    // 3. FILTER: Loc theo keyword va minStudents
+    const min = Number(minStudents);
+    data = data.filter(item => {
+      // Kiem tra so luong thanh vien
+      const matchMin = item.activeCount >= min;
+
+      // Kiem tra keyword (khong phan biet hoa thuong)
+      let matchKeyword = true;
+      if (keyword) {
+        const key = keyword.toLowerCase().trim();
+        const className = (item.className || '').toLowerCase();
+        const subjectName = (item.subjectId?.name || '').toLowerCase();
+        const subjectCode = (item.subjectId?.code || '').toLowerCase();
+        matchKeyword = className.includes(key) || subjectName.includes(key) || subjectCode.includes(key);
+      }
+
+      return matchMin && matchKeyword;
+    });
+
+    // 4. SORT: Sap xep linh hoat bang JavaScript
+    data.sort((a, b) => {
+      const valA = a[sortBy] ?? 0;
+      const valB = b[sortBy] ?? 0;
+      return order === 'asc' ? valA - valB : valB - valA;
+    });
+
+    // 5. SLICE: Phan trang in-memory
+    const totalDocs = data.length;
+    const pageNum = Math.max(1, Number(page) || 1);
+    const limitNum = Math.max(1, Number(limit) || 10);
+    const paginatedData = data.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+    return res.status(200).json({
+      data: paginatedData,
+      pagination: {
+        totalDocs,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(totalDocs / limitNum)
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+```
+
+---
+
+### 10.4. Mau 3: Tinh toan Thong ke / Gom nhom bang reduce + map (Thay the $group)
+
+De bai: *Tinh diem trung binh GPA cua tung sinh vien tren tat ca cac mon va xep loai:*
+
+```javascript
+const getStudentGpaRankings = async (req, res) => {
+  try {
+    // 1. Lay toan bo danh sach Grade
+    const grades = await Grade.find()
+      .populate('studentId', 'studentCode fullName email')
+      .populate('subjectId', 'name code credits')
+      .lean();
+
+    // 2. DUNG REDUCE: Gom nhom theo studentId
+    const groupedByStudent = grades.reduce((acc, item) => {
+      const student = item.studentId;
+      if (!student) return acc;
+      const sId = String(student._id);
+
+      if (!acc[sId]) {
+        acc[sId] = {
+          student: student,
+          scores: [],
+          totalCredits: 0
+        };
+      }
+
+      acc[sId].scores.push(item.score);
+      acc[sId].totalCredits += (item.subjectId?.credits || 1);
+      return acc;
+    }, {});
+
+    // 3. DUNG MAP: Chuyen Object gom nhom thanh mang va tinh GPA
+    const rankings = Object.values(groupedByStudent).map(entry => {
+      const totalScore = entry.scores.reduce((sum, s) => sum + s, 0);
+      const gpa = entry.scores.length > 0 ? totalScore / entry.scores.length : 0;
+      const roundedGpa = Number(gpa.toFixed(2));
+
+      // Xep loai
+      let rank = 'Yeu';
+      if (roundedGpa >= 8.5) rank = 'Xuat sac';
+      else if (roundedGpa >= 7.0) rank = 'Gioi';
+      else if (roundedGpa >= 5.0) rank = 'Dat';
+
+      return {
+        student: entry.student,
+        totalSubjects: entry.scores.length,
+        gpa: roundedGpa,
+        ranking: rank
+      };
+    });
+
+    // 4. Sap xep GPA cao nhat len dau
+    rankings.sort((a, b) => b.gpa - a.gpa);
+
+    return res.status(200).json(rankings);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+};
+```
+
+---
+
+### 10.5. So sanh nhanh giua Mongoose Query / Aggregation va Chien thuat Hybrid
+
+| Tieu chi | Mongoose Query / Aggregation Pipeline | Chien thuat Hybrid (Lean + JS Map/Filter) |
+| :--- | :--- | :--- |
+| **Do de hieu & hoc thuoc** | Kho, nhieu ky tu dac biet (`$expr`, `$$`, `$cond`, `$facet`) | **Rat de**, dung 100% cu phap JavaScript quen thuoc |
+| **Kha nang debug** | Kho console.log giua cac stage cua pipeline | **Rat de**, co the `console.log()` o moi buoc `map` hay `filter` |
+| **Nguy co loi trong phong thi** | Cao (neu nho sai cu phap se loi 500 ngay) | **Cuc thap**, JS thuan it khi bi loi cu phap |
+| **Toc do tren du lieu PE (< 100 docs)** | ~3ms | ~4ms (khong co su khac biet ve mat trai nghiem) |
+| **Phu hop phong thi PE** | Khi de yeu cau bat buoc viet aggregation | **Khuyen dung cho moi bai toan loc / tinh toan logic phuc tap** |
