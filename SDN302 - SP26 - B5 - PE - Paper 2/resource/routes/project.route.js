@@ -1,6 +1,6 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const controller = require('../controllers/project.controller');
+const controller = require("../controllers/project.controller");
 
 // router.get('/', controller.getAll);
 // router.get('/:id', controller.getById);
@@ -8,8 +8,8 @@ const controller = require('../controllers/project.controller');
 // router.put('/:id', controller.update);
 // router.delete('/:id', controller.deleteItem);
 
-router.get('/department/:depId', controller.RetrieveProjectsByDepartment);
-router.get('/:proId/employees', controller.RetrieveEmployeesByProject);
-
+router.get("/department/:depId", controller.RetrieveProjectsByDepartment);
+router.get("/:proId/employees", controller.RetrieveEmployeesByProject);
+router.post("/", controller.createProject);
 
 module.exports = router;
